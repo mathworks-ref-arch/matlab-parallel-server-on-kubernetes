@@ -1,0 +1,78 @@
+# Default values for MATLAB Job Scheduler (MJS) in Kubernetes.
+# Copyright 2024 The MathWorks, Inc.
+
+# Image containing MATLAB Parallel Server
+matlabImage: "" # If this field is unset, the mathworks/matlab-deps image is used by default
+matlabImagePullPolicy: "IfNotPresent"
+matlabRelease: "r2024a" # Release number of the MATLAB version to use
+
+# Image containing the MJS in Kubernetes controller
+controllerImage: "ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-controller-image"
+controllerImageTag: ""
+controllerImagePullPolicy: "IfNotPresent"
+
+# Image containing HAproxy
+haproxyImage: "haproxy"
+haproxyImagePullPolicy: "IfNotPresent"
+
+# Image containing the pool proxy
+poolProxyImage: "containers.mathworks.com/matlab-parallel-server-k8s/parallel-server-proxy-image"
+poolProxyImageTag: ""
+poolProxyImagePullPolicy: "IfNotPresent"
+
+# MJS settings
+minWorkers: 0 # Minimum number of workers to resize the cluster to
+logLevel: 0 # Logging verbosity level
+basePort: 27350 # The base port of the MJS service
+jobManagerName: "MJS_Kubernetes" # Name of the MJS job manager
+securityLevel: 2 # Level of security for the cluster
+useSecureCommunication: true # If true, use secure communication between services
+requireClientCertificate: true # If true, require clients to have a certificate to connect to the job manager
+requireScriptVerification: true # If true, require verification for privileged commands sent to the cluster
+clusterHost: "" # Custom host to use in the cluster profile. If unset, the cluster profile uses the external address of the load balancer
+
+# Resource requests and limits
+workerCPULimit: "" # CPU limit for each worker process
+workerCPURequest: 2 # CPU request for each worker process
+workerMemoryLimit: "8Gi" # Memory limit for each worker process
+workerMemoryRequest: "8Gi" # Memory request for each worker process
+jobManagerCPULimit: "" # CPU limit for the job manager
+jobManagerCPURequest: 1 # CPU request for the job manager
+jobManagerMemoryLimit: "" # Memory limit for the job manager
+jobManagerMemoryRequest: "4Gi" # Memory request for the job manager
+poolProxyCPULimit: "" # CPU limit for each parallel pool proxy process
+poolProxyCPURequest: "0.5" # CPU request for each parallel pool proxy process
+poolProxyMemoryLimit: "" # Memory limit for each parallel pool proxy process
+poolProxyMemoryRequest: "500Mi" # Memory request for each parallel pool proxy process
+
+# Auto-scaling settings
+idleStop: 300 # Time after which idle worker pods will be removed
+autoScalingPeriod: 15 # Period with which the controller checks the cluster's size requirements
+stopWorkerGracePeriod: 60 # Grace period in seconds for running stopworker
+
+# Network settings
+autoCreateLoadBalancer: true # Flag to automatically create a Kubernetes load balancer to expose MATLAB Job Scheduler to MATLAB clients outside the cluster
+
+# Parallel pool proxy settings
+poolProxyBasePort: 30000 # Base port for parallel pool proxies
+workersPerPoolProxy: 32 # Maximum number of workers per parallel pool proxy process
+
+# Security settings
+workerUsername: matlab # Username that MATLAB Parallel Server uses to run jobs
+workerPassword: matlab # Password of the username that MATLAB Parallel Server uses to run jobs
+jobManagerUserID: 0 # ID of the user to run the job manager pod as
+jobManagerGroupID: 0 # Group ID of the user to run the job manager pod as
+internalClientsOnly: false # Flag to allow only MATLAB clients running inside the Kubernetes cluster to connect to the MATLAB Job Scheduler
+
+# Licensing settings
+networkLicenseManager: "" # Address of a network license manager with format port@host
+useOnlineLicensing: false # Set to true to use Online Licensing
+
+# Specify the maximum number of workers that the cluster can automatically resize to in your custom values.yaml file.
+# maxWorkers: 32
+
+# Specify the names of the Persistent Volume Claims (PVCs) for these parameters in your custom values.yaml file.
+# matlabPVC: "matlab-pvc" # Name of a PVC that contains a MATLAB Parallel Server installation
+# checkpointPVC: "checkpoint-pvc" # Name of a PVC where MATLAB Parallel Server stores persistent data related to the job manager
+# logPVC: "log-pvc" # Name of a PVC where MATLAB Parallel Server stores job manager logs
+# workerLogPVC: "worker-log-pvc" # Name of a PVC where MATLAB Parallel Server stores worker logs
