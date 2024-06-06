@@ -9,10 +9,7 @@
 # To specify which MATLAB release to install in the container, edit the value of the MATLAB_RELEASE argument.
 # Use lowercase to specify the release, for example: ARG MATLAB_RELEASE=r2024a
 ARG MATLAB_RELEASE=r2024a
-
-# When you start the build stage, this Dockerfile by default uses the Ubuntu-based matlab-deps image.
-# To check the available matlab-deps images, see: https://hub.docker.com/r/mathworks/matlab-deps
-FROM mjs-job-manager:latest
+FROM ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-job-manager-image:${MATLAB_RELEASE}
 
 # Declare build arguments to use at the current build stage.
 ARG MATLAB_RELEASE
@@ -29,8 +26,8 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     && rm -rf /var/lib/apt/lists/*
 
 # Add the matlab user for workers to run as
-ENV MATLAB_USER_HOME=/home/matlab
-RUN useradd --shell /bin/bash --home ${MATLAB_USER_HOME}
+ENV USER_HOME=/home/matlab
+RUN useradd matlab --shell /bin/bash --home ${USER_HOME}
 
 # Copy the input file onto the container
 ENV INPUT_FILE=/tmp/${MATLAB_RELEASE}.txt
@@ -41,7 +38,7 @@ COPY mpm-input-files/${MATLAB_RELEASE}.txt ${INPUT_FILE}
 # Install support packages into the matlab user's HOME folder.
 RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
-    && sudo HOME=${MATLAB_USER_HOME} ./mpm install \
+    && sudo HOME=${USER_HOME} ./mpm install \
     --inputfile ${INPUT_FILE} \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log ${INPUT_FILE}
