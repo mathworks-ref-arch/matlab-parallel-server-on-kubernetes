@@ -8,14 +8,14 @@ on:
   push:
     # Trigger the workflow if image files or this workflow file are changed
     branches:
-      - main
+      - actions
     paths:
       - "images/job-manager/**"
       - "images/worker/**"
-      - ".github/workflows/matlab-images.yml"
-  schedule:
+      - ".github/workflows/parallel-server-images.yml"
+  #schedule:
     # Run at 00:00 on every Monday (1st Day of the Week)
-    - cron: "0 0 * * 1"
+    #- cron: "0 0 * * 1"
 
 env:
   LICENSE_FILE_PATH: ${{ github.workspace }}/license.lic
