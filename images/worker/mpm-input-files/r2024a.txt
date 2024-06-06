@@ -100,11 +100,9 @@ product.Industrial_Communication_Toolbox
 product.Instrument_Control_Toolbox
 product.LTE_Toolbox
 product.Lidar_Toolbox
-product.MATLAB
 product.MATLAB_Coder
 product.MATLAB_Compiler
 product.MATLAB_Compiler_SDK
-product.MATLAB_Parallel_Server
 product.MATLAB_Production_Server
 product.MATLAB_Report_Generator
 product.MATLAB_Test

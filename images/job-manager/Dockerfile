@@ -33,9 +33,8 @@ RUN export DEBIAN_FRONTEND=noninteractive \
 RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
     && sudo ./mpm install \
-    --release=${MATLAB_RELEASE} \
+    --release=${MATLAB_RELEASE}u0 \
     --destination=/opt/matlab \
     --products MATLAB MATLAB_Parallel_Server \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
-    && sudo rm -rf mpm /tmp/mathworks_root.log 
-
+    && sudo rm -rf mpm /tmp/mathworks_root.log
