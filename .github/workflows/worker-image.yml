@@ -1,5 +1,5 @@
 # Copyright 2024 The MathWorks, Inc.
-name: Build MATLAB Parallel Server images
+name: Build MATLAB Parallel Server worker image
 
 # Trigger this workflow either manually or when a new change is pushed to the
 # repo (except .md files)
@@ -20,7 +20,7 @@ env:
   LICENSE_FILE_PATH: ${{ github.workspace }}/license.lic
 
 jobs:
-  build-push-image:
+  build-push-worker-image:
     # Use large runner
     runs-on: ubuntu-latest-m
 
@@ -33,7 +33,7 @@ jobs:
       matrix:
         matlab-release: [r2024a]
 
-    env: 
+    env:
       IMAGE_BASE_NAME: ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-worker-image
 
     steps:
@@ -64,7 +64,7 @@ jobs:
         run: docker run ${IMAGE_BASE_NAME}:${{ matrix.matlab-release }} bash -c "${BIN_DIR}/mjs start && ${BIN_DIR}/startjobmanager && ${BIN_DIR}/glnxa64/mjshealthcheck -matlabroot /opt/matlab"
 
       - name: Test MATLAB on container
-        env: 
+        gnv:
           MLM_LICENSE_FILE: /tmp/license.lic
         run: docker run -v ${LICENSE_FILE_PATH}:${MLM_LICENSE_FILE} ${IMAGE_BASE_NAME}:${{ matrix.matlab-release }} bash -c "cat ${MLM_LICENSE_FILE} && MLM_LICENSE_FILE=${MLM_LICENSE_FILE} /opt/matlab/bin/matlab -batch 'version'"
 
