@@ -10,7 +10,6 @@ on:
     branches:
       - actions
     paths:
-      - "images/job-manager/**"
       - "images/worker/**"
       - ".github/workflows/parallel-server-images.yml"
   #schedule:
@@ -22,7 +21,8 @@ env:
 
 jobs:
   build-push-image:
-    runs-on: ubuntu-latest
+    # Use large runner
+    runs-on: ubuntu-latest-m
 
     permissions:
       contents: read
@@ -32,10 +32,9 @@ jobs:
       fail-fast: false
       matrix:
         matlab-release: [r2024a]
-        image-type: [job-manager, worker]
 
     env: 
-      IMAGE_BASE_NAME: ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-${{ matrix.image-type }}-image
+      IMAGE_BASE_NAME: ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-worker-image
 
     steps:
       - name: Checkout repo
@@ -52,7 +51,7 @@ jobs:
         uses: docker/build-push-action@v3
         with:
           platforms: linux/amd64
-          context: ./images/${{ matrix.image-type }}
+          context: ./images/worker
           build-args: MATLAB_RELEASE=${{ matrix.matlab-release }}
           tags: ${{ env.IMAGE_BASE_NAME }}:${{ matrix.matlab-release }}
 
