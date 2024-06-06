@@ -66,7 +66,7 @@ jobs:
       - name: Test MATLAB on container
         gnv:
           MLM_LICENSE_FILE: /tmp/license.lic
-        run: docker run -v ${LICENSE_FILE_PATH}:${MLM_LICENSE_FILE} ${IMAGE_BASE_NAME}:${{ matrix.matlab-release }} bash -c "cat ${MLM_LICENSE_FILE} && MLM_LICENSE_FILE=${MLM_LICENSE_FILE} /opt/matlab/bin/matlab -batch 'version'"
+        run: docker run -v ${LICENSE_FILE_PATH}:${MLM_LICENSE_FILE} ${IMAGE_BASE_NAME}:${{ matrix.matlab-release }} bash -c "MLM_LICENSE_FILE=${MLM_LICENSE_FILE} /opt/matlab/bin/matlab -batch 'version'"
 
       - name: Push the image to ghcr.io
         run: docker push ${IMAGE_BASE_NAME}:${{ matrix.matlab-release }}
