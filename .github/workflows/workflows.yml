@@ -1,6 +1,6 @@
 name: Release Artifacts
 
-on:
+on: 
   release:
     types: [created]
 
