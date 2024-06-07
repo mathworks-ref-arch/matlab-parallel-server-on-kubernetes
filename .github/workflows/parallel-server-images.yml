@@ -1,8 +1,6 @@
 # Copyright 2024 The MathWorks, Inc.
 name: Build MATLAB Parallel Server images
 
-# Trigger this workflow either manually or when a new change is pushed to the
-# repo (except .md files)
 on:
   workflow_dispatch:
   push:
@@ -19,12 +17,57 @@ on:
 
 env:
   LICENSE_FILE_PATH: ${{ github.workspace }}/license.lic
+  JM_IMAGE: ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-job-manager-image
 
 jobs:
-  build-push-images:
-    # Use large runner
-    runs-on: ubuntu-latest-m
+  # Build the job manager image and push to GHCR.
+  build-push-job-manager-image:
+    runs-on: ubuntu-latest
+    needs: [build-push-job-manager-image]
+    permissions:
+      contents: read
+      packages: write
 
+    strategy:
+      fail-fast: false
+      matrix:
+        matlab-release: [r2024a]
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build local image
+        uses: docker/build-push-action@v5
+        with:
+          platforms: linux/amd64
+          context: ./images/job-manager
+          build-args: MATLAB_RELEASE=${{ matrix.matlab-release }}
+          tags: ${{ env.JM_IMAGE }}:${{ matrix.matlab-release }}
+
+      - name: Test MJS on container
+        env:
+          BIN_DIR: /opt/matlab/toolbox/parallel/bin
+        run: docker run ${JM_IMAGE}:${{ matrix.matlab-release }} bash -c "${BIN_DIR}/mjs start && ${BIN_DIR}/startjobmanager && ${BIN_DIR}/glnxa64/mjshealthcheck -matlabroot /opt/matlab"
+
+      - name: Push to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          platforms: linux/amd64
+          tags: ${{ env.JM_IMAGE }}:${{ matrix.matlab-release }}
+          push: true
+
+  # Build the worker image on top of the job manager image. This requires a large runner.
+  build-push-worker-image:
+    runs-on: ubuntu-latest-m
+    needs: [build-push-job-manager-image]
     permissions:
       contents: read
       packages: write
@@ -35,7 +78,6 @@ jobs:
         matlab-release: [r2024a]
 
     env:
-      JM_IMAGE: ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-job-manager-image
       WORKER_IMAGE: ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-worker-image
 
     steps:
@@ -49,38 +91,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: Build job manager image locally
-      #   uses: docker/build-push-action@v3
-      #   with:
-      #     platforms: linux/amd64
-      #     context: ./images/job-manager
-      #     build-args: MATLAB_RELEASE=${{ matrix.matlab-release }}
-      #     tags: ${{ env.JM_IMAGE }}:${{ matrix.matlab-release }}
-
-      # - name: Test MJS on job manager container
-      #   env:
-      #     BIN_DIR: /opt/matlab/toolbox/parallel/bin
-      #   run: docker run ${JM_IMAGE}:${{ matrix.matlab-release }} bash -c "${BIN_DIR}/mjs start && ${BIN_DIR}/startjobmanager && ${BIN_DIR}/glnxa64/mjshealthcheck -matlabroot /opt/matlab"
-
-      # - name: Push job manager image to ghcr.io
-      #   run: docker push ${JM_IMAGE}:${{ matrix.matlab-release }}
-
-      - name: Build worker image locally
-        uses: docker/build-push-action@v3
+      - name: Build local image
+        uses: docker/build-push-action@v5
         with:
-          push: true
           platforms: linux/amd64
           context: ./images/worker
           build-args: MATLAB_RELEASE=${{ matrix.matlab-release }}
           tags: ${{ env.WORKER_IMAGE }}:${{ matrix.matlab-release }}
 
-      # - name: Generate MATLAB license file
-      #   run: echo '${{ secrets.MATLAB_LICENSE_FILE_R2024A }}' > ${{ env.LICENSE_FILE_PATH }}
+      - name: Generate MATLAB license file
+        run: echo '${{ secrets.MATLAB_LICENSE_FILE_R2024A }}' > ${{ env.LICENSE_FILE_PATH }}
 
-      # - name: Test MATLAB on worker container
-      #   env:
-      #     MLM_LICENSE_FILE: /tmp/license.lic # License file path on container
-      #   run: docker run -v ${LICENSE_FILE_PATH}:${MLM_LICENSE_FILE} ${WORKER_IMAGE}:${{ matrix.matlab-release }} bash -c "MLM_LICENSE_FILE=${MLM_LICENSE_FILE} /opt/matlab/bin/matlab -batch 'version'"
+      - name: Test MATLAB on container
+        env:
+          MLM_LICENSE_FILE: /tmp/license.lic # License file path on container
+        run: docker run -v ${LICENSE_FILE_PATH}:${MLM_LICENSE_FILE} ${WORKER_IMAGE}:${{ matrix.matlab-release }} bash -c "MLM_LICENSE_FILE=${MLM_LICENSE_FILE} /opt/matlab/bin/matlab -batch 'version'"
 
-      # - name: Push worker image to ghcr.io
-      #   run: docker push ${WORKER_IMAGE}:${{ matrix.matlab-release }}
+      - name: Push to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          platforms: linux/amd64
+          tags: ${{ env.WORKER_IMAGE }}:${{ matrix.matlab-release }}
+          push: true
