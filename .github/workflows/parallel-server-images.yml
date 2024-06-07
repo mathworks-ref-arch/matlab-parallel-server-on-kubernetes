@@ -1,5 +1,5 @@
 # Copyright 2024 The MathWorks, Inc.
-name: Build MATLAB Parallel Server images
+name: Build MATLAB Parallel Server images 
 
 on:
   workflow_dispatch:
