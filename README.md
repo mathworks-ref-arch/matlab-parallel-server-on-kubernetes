@@ -1,5 +1,7 @@
 # MATLAB Parallel Server in Kubernetes
 
+[![View MATLAB Parallel Server in Kubernetes on File Exchange](https://www.mathworks.com/matlabcentral/images/matlab-file-exchange.svg)](https://www.mathworks.com/matlabcentral/fileexchange/167676-matlab-parallel-server-in-kubernetes)
+
 This repository contains utilities for using MATLAB&reg; Parallel Server in a Kubernetes&reg; cluster.
 
 ## Introduction
