@@ -113,4 +113,5 @@ jobs:
           platforms: linux/amd64
           context: ./images/worker
           tags: ${{ env.WORKER_IMAGE }}:${{ matrix.matlab-release }}
+          build-args: MATLAB_RELEASE=${{ matrix.matlab-release }}
           push: true

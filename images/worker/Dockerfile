@@ -38,7 +38,7 @@ COPY mpm-input-files/${MATLAB_RELEASE} ${INPUT_DIR}
 RUN if [ ${INCLUDE_SIMULINK} = true ]; then \
     wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
-    && sudo HOME=${USER_HOME} ./mpm install \
+    && sudo ./mpm install \
     --release=${MATLAB_RELEASE}u0 \
     --destination=/opt/matlab \
     --products Simulink \
@@ -50,16 +50,17 @@ RUN if [ ${INCLUDE_SIMULINK} = true ]; then \
 ENV MATLAB_TOOLBOX_FILE=${INPUT_DIR}/matlab-toolboxes.txt
 RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
-    && sudo HOME=${USER_HOME} ./mpm install \
+    && sudo ./mpm install \
     --inputfile ${MATLAB_TOOLBOX_FILE} \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log ${MATLAB_TOOLBOX_FILE}
 
 # Run mpm to install Simulink toolboxes.
 ENV SIMULINK_TOOLBOX_FILE=${INPUT_DIR}/simulink-toolboxes.txt
-RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
+RUN if [ ${INCLUDE_SIMULINK} = true ]; then \
+    wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
-    && sudo HOME=${USER_HOME} ./mpm install \
+    && sudo ./mpm install \
     --inputfile ${SIMULINK_TOOLBOX_FILE} \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log ${SIMULINK_TOOLBOX_FILE}
