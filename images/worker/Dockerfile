@@ -63,7 +63,8 @@ RUN if [ ${INCLUDE_SIMULINK} = true ]; then \
     && sudo ./mpm install \
     --inputfile ${SIMULINK_TOOLBOX_FILE} \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
-    && sudo rm -rf mpm /tmp/mathworks_root.log ${SIMULINK_TOOLBOX_FILE}
+    && sudo rm -rf mpm /tmp/mathworks_root.log ${SIMULINK_TOOLBOX_FILE} \
+    fi
 
 # Run mpm to install support packages into the matlab user's HOME folder.
 ENV SUPPORT_PACKAGE_FILE=${INPUT_DIR}/support-packages.txt
