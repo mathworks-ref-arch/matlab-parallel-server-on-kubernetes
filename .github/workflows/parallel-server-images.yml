@@ -60,6 +60,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           platforms: linux/amd64
+          context: ./images/job-manager
           tags: ${{ env.JM_IMAGE }}:${{ matrix.matlab-release }}
           push: true
 
@@ -110,5 +111,6 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           platforms: linux/amd64
+          context: ./images/worker
           tags: ${{ env.WORKER_IMAGE }}:${{ matrix.matlab-release }}
           push: true
