@@ -30,16 +30,31 @@ ENV USER_HOME=/home/matlab
 RUN useradd matlab --shell /bin/bash --home ${USER_HOME}
 
 # Copy the input file onto the container
-ENV INPUT_FILE=/tmp/${MATLAB_RELEASE}.txt
-COPY mpm-input-files/${MATLAB_RELEASE}.txt ${INPUT_FILE}
+ENV INPUT_DIR=/tmp/${MATLAB_RELEASE}
+COPY mpm-input-files/${MATLAB_RELEASE} ${INPUT_DIR}
 
-# Run mpm to install MATLAB using the input file delete the mpm installation afterwards.
-# If mpm fails to install successfully, then print the logfile in the terminal, otherwise clean up.
-# Install support packages into the matlab user's HOME folder.
+# Run mpm to install simulink.
 RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
     && sudo HOME=${USER_HOME} ./mpm install \
-    --inputfile ${INPUT_FILE} \
+    --release=${MATLAB_RELEASE}u0 \
+    --destination=/opt/matlab \
+    --products Simulink \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log ${INPUT_FILE}
 
+# Run mpm to install MATLAB toolboxes.
+RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
+    && chmod +x mpm \
+    && sudo HOME=${USER_HOME} ./mpm install \
+    --inputfile ${INPUT_FILE}/toolboxes.txt \
+    || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
+    && sudo rm -rf mpm /tmp/mathworks_root.log ${INPUT_FILE}
+
+# Run mpm to install support packages into the matlab user's HOME folder.
+RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
+    && chmod +x mpm \
+    && sudo HOME=${USER_HOME} ./mpm install \
+    --inputfile ${INPUT_FILE}/support_packages.txt \
+    || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
+    && sudo rm -rf mpm /tmp/mathworks_root.log ${INPUT_FILE}
