@@ -1,7 +1,7 @@
 ########################################################################
 ## Configuration File for Installing R2024a MathWorks Products
 ########################################################################
-## 
+##
 ## Use this file to configure an installation of MathWorks products
 ## and support packages from the command line using the
 ## MATLAB Package Manager (mpm). For example, you can set the
@@ -33,11 +33,10 @@
 ## MathWorks products and support packages.
 ##
 ## To install a specific update for R2024a, set the desired update
-## number (for example, 1, 2, 3, and so on).
-## An updateLevel of 0 installs the general release.
+## number (for example, 1, 2, 3, and so on) and uncomment the
+## following line. An updateLevel of 0 installs the general release.
 
-release=r2024a
-updateLevel=0
+# updateLevel=0
 
 
 ########################################################################
@@ -52,8 +51,11 @@ updateLevel=0
 ## (Windows) destinationFolder=C:\Program Files\MATLAB\RXXXX
 ## (Linux) destinationFolder=/usr/local/RXXXX
 ## (macOS) destinationFolder=/Applications/MATLAB/RXXXX
+##
+## Set the desired value for destinationFolder and
+## uncomment the following line.
 
-destinationFolder=/opt/matlab
+# destinationFolder=
 
 
 ########################################################################
@@ -92,6 +94,11 @@ destinationFolder=/opt/matlab
 #product.Computer_Vision_Toolbox_Model_for_YOLO_v3_Object_Detection
 #product.Computer_Vision_Toolbox_Model_for_YOLO_v4_Object_Detection
 #product.Computer_Vision_Toolbox_OCR_Language_Data
+#product.Data_Acquisition_Toolbox_Support_Package_for_Analog_Devices_ADALM1000_Hardware
+#product.Data_Acquisition_Toolbox_Support_Package_for_Digilent_Analog_Discovery_Hardware
+#product.Data_Acquisition_Toolbox_Support_Package_for_Measurement_Computing_Hardware
+#product.Data_Acquisition_Toolbox_Support_Package_for_National_Instruments_NI-DAQmx_Devices
+#product.Data_Acquisition_Toolbox_Support_Package_for_Windows_Sound_Cards
 #product.Database_Toolbox_Interface_for_Neo4j_Bolt_Protocol
 #product.Databricks_ODBC_Driver_for_Database_Toolbox
 product.Deep_Learning_HDL_Toolbox_Support_Package_for_Intel_FPGA_and_SoC_Devices
