@@ -13,6 +13,7 @@ FROM ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-job-manager-image
 
 # Declare build arguments to use at the current build stage.
 ARG MATLAB_RELEASE
+ARG INCLUDE_SIMULINK=true
 
 # Install mpm dependencies.
 RUN export DEBIAN_FRONTEND=noninteractive \
@@ -34,14 +35,16 @@ ENV INPUT_DIR=/tmp/${MATLAB_RELEASE}
 COPY mpm-input-files/${MATLAB_RELEASE} ${INPUT_DIR}
 
 # Run mpm to install Simulink.
-RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
+RUN if [ ${INCLUDE_SIMULINK} = true ]; then \
+    wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
     && sudo HOME=${USER_HOME} ./mpm install \
     --release=${MATLAB_RELEASE}u0 \
     --destination=/opt/matlab \
     --products Simulink \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
-    && sudo rm -rf mpm /tmp/mathworks_root.log
+    && sudo rm -rf mpm /tmp/mathworks_root.log; \
+    fi
 
 # Run mpm to install MATLAB toolboxes.
 ENV TOOLBOX_FILE=${INPUT_DIR}/toolboxes.txt

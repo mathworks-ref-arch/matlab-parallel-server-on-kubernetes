@@ -42,3 +42,9 @@ Build the Docker image.
 ```
 docker build --build-arg MATLAB_RELEASE=<release> -t <my-tag> .
 ```
+
+The Docker image contains a Simulink installation by default.
+To build an image without Simulink, run
+```
+docker build --build-arg MATLAB_RELEASE=<release>,INCLUDE_SIMULINK=false -t <my-tag> .
+```

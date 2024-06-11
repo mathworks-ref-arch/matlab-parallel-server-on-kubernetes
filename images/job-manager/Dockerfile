@@ -28,13 +28,22 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     && apt-get autoremove \
     && rm -rf /var/lib/apt/lists/*
 
-# Run mpm to install MATLAB and delete the mpm installation afterwards.
-# If mpm fails to install successfully, then print the logfile in the terminal, otherwise clean up.
+# Run mpm to install MATLAB.
 RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
     && sudo ./mpm install \
     --release=${MATLAB_RELEASE}u0 \
     --destination=/opt/matlab \
-    --products MATLAB MATLAB_Parallel_Server \
+    --products MATLAB \
+    || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
+    && sudo rm -rf mpm /tmp/mathworks_root.log
+
+# Run mpm to install MATLAB Parallel Server.
+RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
+    && chmod +x mpm \
+    && sudo ./mpm install \
+    --release=${MATLAB_RELEASE}u0 \
+    --destination=/opt/matlab \
+    --products MATLAB_Parallel_Server \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log

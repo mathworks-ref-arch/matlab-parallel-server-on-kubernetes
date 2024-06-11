@@ -117,11 +117,11 @@ product.Optimization_Toolbox
 product.Parallel_Computing_Toolbox
 product.Partial_Differential_Equation_Toolbox
 product.Phased_Array_System_Toolbox
-product.Polyspace_Bug_Finder
-product.Polyspace_Bug_Finder_Server
-product.Polyspace_Code_Prover
-product.Polyspace_Code_Prover_Server
-product.Polyspace_Test
+#product.Polyspace_Bug_Finder
+#product.Polyspace_Bug_Finder_Server
+#product.Polyspace_Code_Prover
+#product.Polyspace_Code_Prover_Server
+#product.Polyspace_Test
 product.Powertrain_Blockset
 product.Predictive_Maintenance_Toolbox
 product.RF_Blockset

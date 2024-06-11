@@ -21,48 +21,48 @@ env:
 
 jobs:
   # Build the job manager image and push to GHCR.
-  # build-push-job-manager-image:
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: read
-  #     packages: write
+  build-push-job-manager-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       matlab-release: [r2024a]
+    strategy:
+      fail-fast: false
+      matrix:
+        matlab-release: [r2024a]
 
-  #   steps:
-  #     - name: Checkout repo
-  #       uses: actions/checkout@v4
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-  #     - name: Login to GitHub Container Registry
-  #       uses: docker/login-action@v3
-  #       with:
-  #         registry: ghcr.io
-  #         username: ${{ github.actor }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-  #     - name: Build local image
-  #       uses: docker/build-push-action@v5
-  #       with:
-  #         platforms: linux/amd64
-  #         context: ./images/job-manager
-  #         build-args: MATLAB_RELEASE=${{ matrix.matlab-release }}
-  #         tags: ${{ env.JM_IMAGE }}:${{ matrix.matlab-release }}
+      - name: Build local image
+        uses: docker/build-push-action@v5
+        with:
+          platforms: linux/amd64
+          context: ./images/job-manager
+          build-args: MATLAB_RELEASE=${{ matrix.matlab-release }}
+          tags: ${{ env.JM_IMAGE }}:${{ matrix.matlab-release }}
 
-  #     - name: Test MJS on container
-  #       env:
-  #         BIN_DIR: /opt/matlab/toolbox/parallel/bin
-  #       run: docker run ${JM_IMAGE}:${{ matrix.matlab-release }} bash -c "${BIN_DIR}/mjs start && ${BIN_DIR}/startjobmanager && ${BIN_DIR}/glnxa64/mjshealthcheck -matlabroot /opt/matlab"
+      - name: Test MJS on container
+        env:
+          BIN_DIR: /opt/matlab/toolbox/parallel/bin
+        run: docker run ${JM_IMAGE}:${{ matrix.matlab-release }} bash -c "${BIN_DIR}/mjs start && ${BIN_DIR}/startjobmanager && ${BIN_DIR}/glnxa64/mjshealthcheck -matlabroot /opt/matlab"
 
-  #     - name: Push to GHCR
-  #       uses: docker/build-push-action@v5
-  #       with:
-  #         platforms: linux/amd64
-  #         context: ./images/job-manager
-  #         tags: ${{ env.JM_IMAGE }}:${{ matrix.matlab-release }}
-  #         push: true
+      - name: Push to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          platforms: linux/amd64
+          context: ./images/job-manager
+          tags: ${{ env.JM_IMAGE }}:${{ matrix.matlab-release }}
+          push: true
 
   # Build the worker image on top of the job manager image. This requires a large runner.
   build-push-worker-image:
