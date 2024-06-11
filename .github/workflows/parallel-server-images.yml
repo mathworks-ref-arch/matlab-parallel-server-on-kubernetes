@@ -64,10 +64,10 @@ jobs:
           tags: ${{ env.JM_IMAGE }}:${{ matrix.matlab-release }}
           push: true
 
-  # Build the worker image on top of the job manager image. This requires a large runner.
+  # Build the worker image on top of the job manager image. This requires a large runner so we have enough storage for the local image.
   build-push-worker-image:
     runs-on: ubuntu-latest-m
-    # needs: [build-push-job-manager-image]
+    needs: [build-push-job-manager-image]
     permissions:
       contents: read
       packages: write
