@@ -55,7 +55,7 @@
 ## Set the desired value for destinationFolder and
 ## uncomment the following line.
 
-# destinationFolder=
+destinationFolder=/opt/matlab
 
 
 ########################################################################
