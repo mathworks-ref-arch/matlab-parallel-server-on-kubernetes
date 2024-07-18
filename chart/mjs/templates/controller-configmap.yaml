@@ -1,0 +1,94 @@
+# Config file for the MJS controller.
+# Copyright 2024 The MathWorks, Inc.
+{{- $workerImageTag := .Values.matlabImageTag | default .Values.matlabRelease }}
+{{- $jobManagerImageTag := .Values.jobManagerImageTag | default .Values.matlabRelease }}
+{{- $workerImage := .Values.matlabImage }}
+{{- $jobManagerImage := .Values.jobManagerImage }}
+{{- if not (empty .Values.matlabPVC) }}
+  {{- $workerImage = .Values.matlabDepsImage }}
+  {{- if .Values.jobManagerUsesPVC }}
+    {{- $jobManagerImage = .Values.matlabDepsImage }}
+  {{- end -}}
+{{- end -}}
+{{- $poolProxyImageTag := .Values.poolProxyImageTag | default .Values.matlabRelease }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "resources.controllerConfigMap" . }}
+data:
+  {{ include "paths.controllerConfig" . }}: |
+    {
+      "BasePort": {{ .Values.basePort | int }},
+      "CertFileName": {{ include "paths.certFile" . | quote }},
+      "CheckpointBase": {{ include "paths.checkpointbase" . | quote }},
+      "CheckpointPVC": {{ .Values.checkpointPVC | quote }},
+      "ClusterHost": {{ .Values.clusterHost | quote }},
+      "ControllerLogfile": {{ include "paths.controllerLog" . | quote }},
+      "DeploymentName": {{ include "resources.controller" . | quote}},
+      "EnableServiceLinks": {{ include "derived.enableServiceLinks" . }},
+      "ExtraWorkerEnvironment": {
+      {{- $comma := "" }}
+      {{- range $key, $value := .Values.extraWorkerEnv }}
+        {{ $comma }}{{ $key | quote }}: {{ $value | quote }}
+        {{- $comma = "," }}
+      {{- end }}
+      },
+      "IdleStop": {{ .Values.idleStop }},
+      "InternalClientsOnly": {{ .Values.internalClientsOnly }},
+      "JobManagerImage": {{ printf "%s:%s" $jobManagerImage $jobManagerImageTag | quote }},
+      "JobManagerImagePullPolicy": {{ .Values.jobManagerImagePullPolicy | quote }},
+      "JobManagerName": {{ .Values.jobManagerName | quote }},
+      "JobManagerCPULimit": {{ .Values.jobManagerCPULimit | quote }},
+      "JobManagerCPURequest": {{ .Values.jobManagerCPURequest | quote }},
+      "JobManagerMemoryLimit": {{ .Values.jobManagerMemoryLimit | quote }},
+      "JobManagerMemoryRequest": {{ .Values.jobManagerMemoryRequest | quote }},
+      "JobManagerGroupID": {{ .Values.jobManagerGroupID }},
+      "JobManagerUserID": {{ .Values.jobManagerUserID }},
+      "JobManagerUID": {{ uuidv4 | quote }},
+      "LivenessProbeFailureThreshold": {{ .Values.livenessProbeFailureThreshold | default 3 }},
+      "LivenessProbePeriod": {{ .Values.livenessProbePeriod | default  300 }},
+      "LivenessProbeTimeout": {{ .Values.livenessProbeTimeout | default 30 }},
+      "LoadBalancerName": {{ (include "resources.ingressProxy" .) | quote }},
+      "LogBase": {{ include "paths.logbase" . | quote }},
+      "LogLevel": {{ .Values.logLevel }},
+      "LogPVC": {{ .Values.logPVC | quote }},
+      "MatlabPVC": {{ .Values.matlabPVC | default "" | quote }},
+      "MatlabRoot": {{ include "paths.matlabroot" . | quote }},
+      "MaxWorkers": {{ .Values.maxWorkers }},
+      "MinWorkers": {{ .Values.minWorkers }},
+      "MJSDefConfigMap": {{ include "resources.mjsConfigMap" . | quote }},
+      "MJSDefDir" : {{ include "paths.configDir" . | quote }},
+      "Namespace": {{ .Release.Namespace | quote }},
+      "NetworkLicenseManager": {{ .Values.networkLicenseManager | quote }},
+      "Period": {{ .Values.autoScalingPeriod }},
+      "PortsPerWorker": {{ .Values.portsPerWorker | default 2 }},
+      "PoolProxyBasePort": {{ .Values.poolProxyBasePort }},
+      "PoolProxyCPULimit": {{ .Values.poolProxyCPULimit | quote }},
+      "PoolProxyCPURequest": {{ .Values.poolProxyCPURequest | quote }},
+      "PoolProxyImage": {{ printf "%s:%s" .Values.poolProxyImage $poolProxyImageTag | quote }},
+      "PoolProxyImagePullPolicy": {{ .Values.poolProxyImagePullPolicy | quote }},
+      "PoolProxyMemoryLimit": {{ .Values.poolProxyMemoryLimit | quote }},
+      "PoolProxyMemoryRequest": {{ .Values.poolProxyMemoryRequest | quote }},
+      "ResizePath": {{ printf "%s/toolbox/parallel/bin/resize" (include "paths.matlabroot" .) | quote }},
+      "RequireClientCertificate": {{ .Values.requireClientCertificate }},
+      "RequireScriptVerification": {{ .Values.requireScriptVerification }},
+      "SecretDir": {{ include "paths.secretDir" . | quote }},
+      "SecretFileName": {{ include "paths.secretFile" . | quote }},
+      "SecurityLevel": {{ .Values.securityLevel }},
+      "StartupProbeFailureThreshold": {{ .Values.startupProbeFailureThreshold | default 60 }},
+      "StartupProbeInitialDelay": {{ .Values.startupProbeInitialDelay | default 5 }},
+      "StartupProbePeriod": {{ .Values.startupProbePeriod | default 1 }},
+      "StopWorkerGracePeriod": {{ .Values.stopWorkerGracePeriod }},
+      "WorkerCPULimit": {{ .Values.workerCPULimit | quote }},
+      "WorkerCPURequest": {{ .Values.workerCPURequest | quote }},
+      "WorkerImage": {{ printf "%s:%s" $workerImage $workerImageTag | quote }},
+      "WorkerImagePullPolicy": {{ .Values.matlabImagePullPolicy | quote }},
+      "WorkerMemoryLimit": {{ .Values.workerMemoryLimit | quote }},
+      "WorkerMemoryRequest": {{ .Values.workerMemoryRequest | quote }},
+      "WorkerLogPVC": {{ .Values.workerLogPVC | quote }},
+      "WorkerPassword": {{ .Values.workerPassword | quote }},
+      "WorkersPerPoolProxy": {{ .Values.workersPerPoolProxy }},
+      "WorkerUsername": {{ .Values.workerUsername | quote }},
+      "UsePoolProxy": {{ .Values.usePoolProxy | default true }},
+      "UseSecureCommunication": {{ .Values.useSecureCommunication }}
+    }
