@@ -1,0 +1,26 @@
+# Create a service for each pool proxy so that the ingress proxy always has a backend to route to.
+# Note that the pool proxy pods themselves are created later by the controller.
+# Copyright 2024 The MathWorks, Inc.
+{{- range untilStep 0 (include "derived.numProxies" . | int) 1 }}
+{{- $portNum := add $.Values.poolProxyBasePort . | int }}
+{{- $proxyNum := add . 1 }}
+{{- $name := printf "%s-%d" (include "resources.poolProxy" .) $proxyNum }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ include "resources.poolProxy" . }}
+    proxyName: {{ $name }}
+    port: {{ $portNum | quote }}
+    proxyID: {{ $proxyNum | quote }}
+spec:
+  type: ClusterIP
+  selector:
+    proxyName: {{ $name }}
+  ports:
+  - protocol: TCP
+    port: {{ $portNum }}
+    targetPort: {{ $portNum }}
+---
+{{ end -}}

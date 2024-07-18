@@ -21,14 +21,20 @@ If you do not include a parameter in your YAML file, your configuration uses the
 `jobManagerCPULimit`        | CPU limit for the job manager pod. | &mdash;
 `jobManagerCPURequest`      | CPU request for the job manager pod. | `1`
 `jobManagerGroupID`         | Group ID of the user account that MATLAB Job Scheduler uses to run the job manager pod. The user must have write permission for the checkpoint and log PersistentVolumes. To find the group ID, on a Linux machine, run the command `id -g` in the terminal. | `0`
+`jobManagerImage`           | URI of the MATLAB Parallel Server image to use for the MATLAB Job Scheduler job manager. | `ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-job-manager-image`
+`jobManagerImagePullPolicy` | Pull policy for the job manager image. | `IfNotPresent`
+`jobManagerImageTag`        | Tag of the image to use for the job manager image. If you do not set this value, the Helm chart uses the `matlabRelease` parameter as the tag. | &mdash;
 `jobManagerMemoryLimit`     | Memory limit for the job manager pod. | &mdash;
 `jobManagerMemoryRequest`   | Memory request for the job manager pod. | `4Gi`
 `jobManagerName`            | Name of the MATLAB Job Scheduler job manager. | `MJS_Kubernetes`
 `jobManagerUserID`          | User ID of the user account that MATLAB Job Scheduler uses to run the job manager pod. The user must have write permission for the checkpoint and log PersistentVolumes. To find the user ID, on a Linux machine, run `id -u` in the terminal. | `0`
+`jobManagerUsesPVC`         | Flag to mount a MATLAB Parallel Server installation from a PersistentVolume onto the job manager pod if the `matlabPVC` parameter is set. If this flag is set to true, the job manager pod uses the image specified in the `matlabDepsImage` parameter. | `false`
 `logLevel`                  | Verbosity level of MATLAB Job Scheduler logging. | `0`
 `logPVC`                    | Name of the PersistentVolumeClaim that is bound to the PersistentVolume used to retain job manager logs. | &mdash;
-`matlabImage`               | URI of the image to use for the MATLAB Job Scheduler pods. If unset, your configuration uses the [`mathworks/matlab-deps`](https://hub.docker.com/r/mathworks/matlab-deps) image. Set this value if you built a custom Docker image containing a MATLAB Parallel Server installation or if you want to use a privately hosted version of the `mathworks/matlab-deps` image. | &mdash;
-`matlabImagePullPolicy`     | Pull policy for the MATLAB image. | `IfNotPresent`
+`matlabDepsImage`           | URI of the MATLAB dependencies image to use for the MATLAB Job Scheduler worker pods if the MATLAB Parallel Server installation is mounted from a PersistentVolume. The worker pods only use this image if the `matlabPVC` parameter is set. The worker pods use the `matlabImageTag` parameter as the image tag. | `mathworks/matlab-deps`
+`matlabImage`               | URI of the image to use for the MATLAB Job Scheduler workers. This image should contain a MATLAB Parallel Server installation, plus any MathWorks toolboxes you want to use in your MATLAB Parallel Server jobs. | `ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-worker-image`
+`matlabImagePullPolicy`     | Pull policy for the worker image. | `IfNotPresent`
+`matlabImageTag`            | Tag of the image to use for the worker image. If you do not set this value, the Helm chart uses the `matlabRelease` parameter as the tag. | &mdash;
 `matlabPVC`                 | Name of the PersistentVolumeClaim that is bound to the PersistentVolume with a MATLAB Parallel Server installation. Set this option only if you did not build a Docker image containing a MATLAB Parallel Server installation. | &mdash;
 `matlabRelease`             | Release number of the MATLAB version to use. | `r2024a`
 `maxWorkers`                | Maximum number of workers that the cluster can automatically resize to. | &mdash;

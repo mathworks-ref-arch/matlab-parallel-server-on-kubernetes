@@ -1,0 +1,57 @@
+# Deployment for the MJS controller.
+# Copyright 2024 The MathWorks, Inc.
+{{- $controllerImageTag := .Values.controllerImageTag | default .Chart.AppVersion }}
+{{- $name := include "resources.controller" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+    spec:
+      # Controller requires elevated Kubernetes permissions
+      serviceAccountName: {{ include "resources.controllerServiceAccount" . }}
+
+      # If set to false, disable creation of environment variables for services
+      enableServiceLinks: {{ include "derived.enableServiceLinks" . }}
+
+      containers:
+      - name: {{ $name }}
+        image: {{ printf "%s:%s" .Values.controllerImage $controllerImageTag }}
+        imagePullPolicy: {{ .Values.controllerImagePullPolicy }}
+
+        # The controller process requires the path to a config file as an input argument
+        # This file is mounted from a ConfigMap (defined in mjs.yaml)
+        {{- $configMapDir := "/config" }}
+        args:
+        - {{ printf "-config=%s/%s" $configMapDir (include "paths.controllerConfig" .) }}
+
+        # Mount the config file from the ConfigMap
+        {{- $configVolName := "config-vol" }}
+        volumeMounts:
+        - name: {{ $configVolName }}
+          mountPath: {{ $configMapDir }}
+
+        # Store controller logs in the same directory as the job manager logs
+        {{- $logVolName := "log-vol" }}
+        {{- if .Values.logPVC }}
+        - name: {{ $logVolName }}
+          mountPath: {{ include "paths.logbase" . }}
+        {{- end }}
+
+      volumes:
+      - name: {{ $configVolName }}
+        configMap:
+          name: {{ include "resources.controllerConfigMap" . }}
+      {{- if .Values.logPVC }}
+      - name: {{ $logVolName }}
+        persistentVolumeClaim:
+          claimName: {{ .Values.logPVC }}
+      {{- end }}

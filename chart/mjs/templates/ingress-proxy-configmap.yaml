@@ -1,0 +1,43 @@
+{{- if not .Values.internalClientsOnly }}
+# HAproxy config file with rules for mapping to the job manager or pool proxies based on TCP port.
+# Copyright 2024 The MathWorks, Inc.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "resources.ingressConfigMap" . }}
+data:
+  {{ include "paths.ingressProxyConfig" . }}: |
+    global
+        log stdout local0
+    defaults
+        default-server init-addr last,libc,none
+        log global
+        option tcplog
+        mode tcp
+        timeout connect 30s
+        timeout client 300s
+        timeout server 300s
+
+    # Rules for proxying traffic to the job manager pod.
+    frontend front-lookup
+        bind {{ printf "*:%d" (include "derived.lookupPort" . | int) }}
+        default_backend back-mjs-job-manager
+    frontend front-jobmanager
+        bind {{ printf "*:%d" (include "derived.jobManagerPort" . | int) }}
+        default_backend back-mjs-job-manager
+    backend back-mjs-job-manager
+        server mjs-job-manager mjs-job-manager
+
+    # Rules for proxying traffic to the parallel pool proxies.
+    # Each parallel pool proxy has a unique port, which should be mapped to the
+    # corresponding Kubernetes service for that proxy.
+    {{- range untilStep 0 (include "derived.numProxies" . | int) 1 }}
+    {{- $portNum := add $.Values.poolProxyBasePort . | int }}
+    {{- $poolProxyName := printf "%s-%d" (include "resources.poolProxy" .) (add . 1) }}
+    frontend front-{{ $poolProxyName }}
+        bind {{ printf "*:%d" $portNum }}
+        default_backend back-{{ $poolProxyName }}
+    backend back-{{ $poolProxyName }}
+        server {{ $poolProxyName }} {{ $poolProxyName }}
+    {{ end -}}
+{{ end -}}
