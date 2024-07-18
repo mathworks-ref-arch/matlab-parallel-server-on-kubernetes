@@ -28,13 +28,15 @@ jobs:
       with:
         push: true
         tags: ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-controller-image:${{ github.event.release.tag_name }}
-        context: ./controller
+        context: ./images/controller
 
   release-helm-chart:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    env:
+      CHART_DIR: chart/mjs
 
     steps:
       - name: Check out the repo
@@ -44,13 +46,13 @@ jobs:
         uses: azure/setup-helm@v4
 
       - name: Lint chart
-        run: helm lint mjs --set maxWorkers=4,matlabPVC=test,checkpointPVC=test,logPVC=test,workerLogPVC=test
+        run: helm lint ${CHART_DIR} --set maxWorkers=4,matlabPVC=test,checkpointPVC=test,logPVC=test,workerLogPVC=test
 
       - name: Check chart versions
-        run: grep "version. ${{ github.event.release.tag_name }}" mjs/Chart.yaml && grep "appVersion. ${{ github.event.release.tag_name }}" mjs/Chart.yaml # Use "." (any character) rather than ":", since ":" breaks YAML parser
+        run: grep "version. ${{ github.event.release.tag_name }}" ${CHART_DIR}/Chart.yaml && grep "appVersion. ${{ github.event.release.tag_name }}" ${CHART_DIR}/Chart.yaml # Use "." (any character) rather than ":", since ":" breaks YAML parser
 
       - name: Package chart
-        run: helm package mjs --version ${{ github.event.release.tag_name }} --app-version ${{ github.event.release.tag_name }}
+        run: helm package ${CHART_DIR} --version ${{ github.event.release.tag_name }} --app-version ${{ github.event.release.tag_name }}
 
       - name: Login to GitHub Container Registry
         run: echo ${{ secrets.HELM_TOKEN }} | helm registry login ghcr.io/mathworks-ref-arch --username hannahpullen --password-stdin
