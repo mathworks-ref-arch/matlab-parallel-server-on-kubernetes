@@ -64,7 +64,7 @@ data:
     chmod o+w "${LOGBASE}"
 
     # Create a user to run MATLAB as
-    useradd --create-home {{ .Values.workerUsername }}
+    useradd --create-home {{ .Values.workerUsername }} || echo "User {{ .Values.workerUsersname }} already exists"
     echo {{ printf "%s:%s" .Values.workerUsername .Values.workerPassword }} | chpasswd
 
     # Start the MJS service
