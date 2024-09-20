@@ -2,14 +2,14 @@
 
 [![View MATLAB Parallel Server in Kubernetes on File Exchange](https://www.mathworks.com/matlabcentral/images/matlab-file-exchange.svg)](https://www.mathworks.com/matlabcentral/fileexchange/167676-matlab-parallel-server-in-kubernetes)
 
-This repository contains utilities for using MATLAB&reg; Parallel Server in a Kubernetes&reg; cluster.
+This repository contains utilities for using MATLAB&reg; Parallel Server&trade; in a Kubernetes&reg; cluster.
 
 ## Introduction
 
 This guide explains how to deploy MATLAB Job Scheduler onto your Kubernetes cluster.
 You can then connect to the MATLAB Job Scheduler and use it to run MATLAB Parallel Server jobs on the Kubernetes cluster.
 
-For more information on MATLAB Job Scheduler and MATLAB Parallel Server, see the MathWorks documentation on [MATLAB Parallel Server](https://www.mathworks.com/help/matlab-parallel-server/index.html).
+For more information on MATLAB Job Scheduler and MATLAB Parallel Server, see the MathWorks&reg; documentation on [MATLAB Parallel Server](https://www.mathworks.com/help/matlab-parallel-server/index.html).
 
 ## Requirements
 
@@ -20,7 +20,7 @@ Before you start, you need the following:
   - Uses Kubernetes version 1.21.1 or later.
   - Meets the system requirements for running MATLAB Job Scheduler. For details, see the MathWorks documentation for [MATLAB Parallel Server Product Requirements](https://www.mathworks.com/support/requirements/matlab-parallel-server.html).
   - Configured to create external load balancers that allow traffic into the cluster.
-- Docker&reg; installed on your computer. For help with installing Docker, see [Get Docker](https://docs.docker.com/get-docker/).
+  - Has adequate storage on cluster nodes. When using a MATLAB Parallel Server Docker image for your workers (default behavior), ensure that each cluster node has at least 50GB of storage. If mounting MATLAB Parallel Server from a persistent volume, each cluster node must have at least 20GB of storage.
 - Kubectl installed on your computer and configured to access your Kubernetes cluster. For help with installing Kubectl, see [Install Tools](https://kubernetes.io/docs/tasks/tools/) on the Kubernetes website.
 - Helm&reg; version 3.8.0 or later installed on your computer. For help with installing Helm, see [Quickstart Guide](https://helm.sh/docs/intro/quickstart/).
 - Network access to the MathWorks Container Registry, `containers.mathworks.com`, and the GitHub&reg; Container registry, `ghcr.io`.
@@ -51,14 +51,11 @@ Create these volumes using your preferred storage medium.
 For instructions, see the [Kubernetes PersistentVolume documentation](https://kubernetes.io/docs/concepts/storage/persistent-volumes/).
 
 The software requires three PersistentVolumes to retain job data and logs.
-You can also use a PersistentVolume to mount your own MATLAB Parallel Server installation onto the MATLAB Job Scheduler pods.
-If you do not create a PersistentVolume containing a MATLAB Parallel Server installation, you must use a Docker image that has MATLAB Parallel Server installed.
 
 Create a PersistentVolume for each of the following applications:
 - An empty PersistentVolume with access mode `ReadWriteOnce` for MATLAB Job Scheduler's checkpoint folder, which retains job data after exiting the session
 - An empty PersistentVolume with access mode `ReadWriteOnce` to retain logs from the MATLAB Job Scheduler job manager
 - An empty PersistentVolume with access mode `ReadWriteMany` to retain logs from the MATLAB Job Scheduler workers
-- A PersistentVolume with access mode `ReadOnlyMany` containing a MATLAB Parallel Server installation
 
 Now create a *PersistentVolumeClaim* for each PersistentVolume.
 You can create a PersistentVolumeClaim by using the following example configuration file.
@@ -82,25 +79,6 @@ spec:
       storage: <capacity>
 ```
 
-### Build MATLAB Parallel Server Docker Image (Optional)
-
-The MATLAB Job Scheduler pods require a MATLAB Parallel Server installation.
-By default, you mount this from a PersistentVolume, as described in the previous step.
-If you do not have a MATLAB Parallel Server installation to mount, you can build a Docker image containing a MATLAB Parallel Server installation instead.
-
-Build a Docker image that contains a MATLAB Parallel Server installation.
-- Specify `<release>` as a MATLAB release number with a lowercase `r`. For example, to install MATLAB R2024a, specify `<release>` as `r2024a`. The MATLAB release must be version R2024a or later.
-- Specify `<other-products>` as a space-separated list of MATLAB toolboxes you want to install. The toolbox names must match the product names listed on the MathWorks&reg; product page with any spaces replaced by underscores. For example, to install Parallel Computing Toolbox and Deep Learning Toolbox, specify `<other-products>` as `Parallel_Computing_Toolbox Deep_Learning_Toolbox`. For a complete list of product names, see [MathWorks Products](https://www.mathworks.com/products.html).
-- Specify `<my-tag>` as the Docker tag to use for the image.
-```
-docker build https://raw.githubusercontent.com/mathworks-ref-arch/matlab-dockerfile/main/Dockerfile --build-arg MATLAB_INSTALL_LOCATION=/opt/matlab --build-arg MATLAB_RELEASE=<release> --build-arg MATLAB_PRODUCT_LIST="MATLAB MATLAB_Parallel_Server <other-products>" -t <my-tag>
-```
-
-Push the image to a repository that is visible to your Kubernetes cluster.
-
-For more information on building a MATLAB Docker image, see [Create a MATLAB Container Image](https://github.com/mathworks-ref-arch/matlab-dockerfile) in the GitHub repository.
-
-
 ### Create Administrator Password Secret
 
 By default, MATLAB Job Scheduler in Kubernetes runs at security level 2.
@@ -109,6 +87,7 @@ For details about security levels, see [MATLAB Job Scheduler Security](https://w
 
 When you run MATLAB Job Scheduler with security level 2, you must provide an administrator password.
 Create a Kubernetes Secret for your administrator password named `mjs-admin-password` and replace `<password>` with a password of your choice.
+If you are using LDAP to authenticate user credentials, this must be the password of the cluster administrator in the LDAP server.
 ```
 kubectl create secret generic mjs-admin-password --from-literal=password=<password> --namespace mjs
 ```
@@ -123,26 +102,45 @@ Copy the following lines into a YAML file, `values.yaml`, and modify the values 
 ```yaml
 matlabRelease: r2024a
 maxWorkers: 100
-matlabPVC: "matlab-pvc"
+
+# Licensing settings
+useOnlineLicensing: true
+networkLicenseManager: ""
+
+# PersistentVolumeClaim settings
 checkpointPVC: "checkpoint-pvc"
 logPVC: "log-pvc"
 workerLogPVC: "worker-log-pvc"
+
+# Security settings
 jobManagerUserID: 0
 jobManagerGroupID: 0
-matlabImage: ""
 ```
 Modify the following values:
 - `matlabRelease` &mdash; Specify the release number of the MATLAB Parallel Server installation.
 - `maxWorkers` &mdash; Specify the maximum number of MATLAB Parallel Server workers to run in the cluster. The cluster starts with zero workers and automatically scales up to this number as the cluster becomes busy.
-- `matlabPVC` &mdash; Specify the name of a PersistentVolumeClaim that is bound to the PersistentVolume with a MATLAB Parallel Server installation.
+- `useOnlineLicensing` &mdash; Option to use MathWorks online licensing. Set this parameter to true to use online licensing to manage licensing for your cluster users. When enabled, users must log in to their MathWorks account to connect to the cluster, and their account must be linked to a MATLAB Parallel Server license that is managed online. For more information about online licensing, see [Use Online Licensing for MATLAB Parallel Server](https://www.mathworks.com/products/matlab-parallel-server/online-licensing.html) on the MathWorks website. To learn how to set up online licensing, see the MathWorks documentation [Configure MATLAB Parallel Server Licensing for Cloud Platforms](https://www.mathworks.com/help/matlab-parallel-server/configure-matlab-parallel-server-licensing-for-cloud-platforms.html).
+- `networkLicenseManager` &mdash; To use a network license manager to manage licensing for your cluster users, specify the address of your network license manager in the format `port@host`. The license manager must be accessible from the Kubernetes cluster. You can install or use an existing network license manager running on-premises or on AWS&reg;. To install a network license manager on-premises, see the MathWorks documentation [Install License Manager on License Server](https://www.mathworks.com/help/install/ug/install-license-manager-on-license-server.html). To deploy a network license manager reference architecture on AWS, select a MATLAB release from [Network License Manager for MATLAB on AWS](https://github.com/mathworks-ref-arch/license-manager-for-matlab-on-aws).
 - `checkpointPVC` &mdash; Specify the name of a PersistentVolumeClaim that is bound to a PersistentVolume used to retain job data.
 - `logPVC` &mdash; Specify the name of a PersistentVolumeClaim that is bound to a PersistentVolume used to retain job manager logs.
 - `workerLogPVC` &mdash; Specify the name of a PersistentVolumeClaim that is bound to a PersistentVolume used to retain worker logs.
 - `jobManagerUserID` &mdash; Specify the user ID of the user account that MATLAB Job Scheduler should use to run the job manager pod. The user must have write permission for the checkpoint and log PersistentVolumes. To find the user ID, on a Linux machine, run `id -u`.
 - `jobManagerGroupID` &mdash; Specify the group ID of the user account that MATLAB Job Scheduler should use to run the job manager pod. The user must have write permission for the checkpoint and log PersistentVolumes. To find the group ID, on a Linux machine, run `id -g`.
-- `matlabImage` &mdash; Specify the URI of a Docker image that contains a MATLAB Parallel Server installation. Specify a URI only if you built a Docker image instead of mounting a MATLAB Parallel Server installation from a PersistentVolume. If you specify this parameter, set the `matlabPVC` parameter to an empty string (`""`).
 
 For a full list of the configurable Helm values that you can set in this file, see the [Helm Values](helm_values.md) page.
+
+To use an LDAP server to authenticate user credentials, add the following parameters to the `values.yaml` file:
+```yaml
+adminUser: "admin"
+ldapURL: "ldaps://HOST:PORT"
+ldapSecurityPrincipalFormat: "[username]@domain.com"
+```
+Modify the following values:
+- `adminUser` &mdash; Specify the username of a valid user in the LDAP server. The secret you created in the [Create Administrator Password Secret](#create-administrator-password-secret) must contain this user's password.
+- `ldapURL` &mdash; Specify the URL of the LDAP server as `ldaps://HOST:PORT`. If you have not configured your LDAP server over SSL, specify the URL as `ldap://HOST:PORT`.
+- `ldapSecurityPrincipalFormat` &mdash; Specify the format of a security principal (user) for your LDAP server.
+
+**Security Considerations:** Use LDAP over SSL (LDAPS) to encrypt communication between the LDAP server and clients. For additional LDAPS configuration steps, see [Configure LDAP over SSL](#configure-ldap-over-ssl).
 
 ### Install Helm Chart
 
@@ -175,10 +173,10 @@ NAME                         TYPE           CLUSTER-IP     EXTERNAL-IP     PORT
 mjs-ingress-proxy-ed5e5db8   LoadBalancer   10.233.12.53   192.168.1.200   27356:31387/TCP,27359:31664/TCP,30000:32212/TCP
 ```
 
-Configure your firewall so that MATLAB clients can route to the IP address or hostname under the `EXTERNAL-IP` column through the ports this service exposes.
+Configure your firewall so that MATLAB clients can connect to the IP address or hostname under the `EXTERNAL-IP` column through the ports this service exposes.
 For a description of the ports the load balancer service exposes, see the [Customize Load Balancer](#customize-load-balancer) section.
 
-If you want the MATLAB client to route to this load balancer through a different hostname, for example, an intermediate server or a DNS entry, set the value of the `clusterHost` parameter in your Helm values file before you install MATLAB Job Scheduler on your Kubernetes cluster.
+If you want the MATLAB client to connect to this load balancer through a different hostname, for example, an intermediate server or a DNS entry, set the value of the `clusterHost` parameter in your Helm values file before you install MATLAB Job Scheduler on your Kubernetes cluster.
 
 ## Download Cluster Profile
 
@@ -204,16 +202,97 @@ Import the cluster profile.
 2. Click **Import** in the toolbar.
 3. Navigate to the location where you saved the profile you created in the previous step and select it.
 
-### Validate Cluster
+## Validate Cluster
 
 Cluster validation submits a job of each type to test whether the cluster profile is configured correctly.
 In the Cluster Profile Manager, click **Validate**.
 If you make a change to the cluster configuration, run cluster validation again to ensure your changes cause no errors.
 You do not need to validate the profile each time you use it or each time you start MATLAB.
 
+### Troubleshoot Cluster Validation Failures
+
+The following sections explain how to resolve some common cluster validation failures.
+
+#### Cluster Connection Test Failure
+
+Incorrect cluster profiles or networking issues can cause failures during the "Cluster connection test (parcluster)" cluster validation stage.
+
+If you have uninstalled and reinstalled the MATLAB Job Scheduler Helm chart, make sure you download and import the new cluster profile following the instructions in [Download Cluster Profile](#download-cluster-profile).
+Using a cluster profile from a previous deployment in the same Kubernetes cluster results in cluster validation errors.
+
+You must ensure that your MATLAB client can connect to the IP address of the load balancer and that your firewall allows traffic to the MATLAB Job Scheduler ports.
+To check the load balancer's IP address, see [Install Helm Chart](#install-helm-chart).
+For a description of the MATLAB Job Scheduler ports, see [Customize Load Balancer](#customize-load-balancer).
+
+#### License Checkout Failure
+
+If you have not correctly configured the MATLAB Parallel Server license for your cluster, the "Job test (createJob)" cluster validation stage fails with this message:
+```
+License checkout failed
+```
+Make sure you have set either the `useOnlineLicensing` parameter or the `networkLicenseManager` parameter in your `values.yaml` file. 
+To learn more about the `useOnlineLicensing` and `networkLicenseManager` parameters, see [Create Helm Values File](#create-helm-values-file).
+
+If you continue to experience licensing errors, contact [MathWorks Technical Support](https://www.mathworks.com/support/contact_us.html).
+
+#### Job Test Unresponsive
+
+If the "Job test (createJob)", "SPMD job test (createCommunicatingJob)" or "Pool job test (createCommunicatingJob)" stage takes a very long time to run (> 5 minutes), your Kubernetes cluster might not have sufficient resources to start the worker pods.
+
+Check the status of the worker pods while cluster validation is in progress by running
+```
+kubectl get pods --label app=mjs-worker --namespace mjs
+```
+
+If a worker pod has the `Pending`, `ContainerCreating` or `ContainerStatusUnknown` status, check the pod's details by running
+```
+kubectl describe pods --namespace mjs <pod-name>
+```
+Replace `<pod-name>` with the name of the worker pod.
+
+If your Kubernetes cluster does not have enough CPU resources to run the pod, the output might include messages like:
+```
+Events:
+  Type     Reason            Age   From               Message
+  ----     ------            ----  ----               -------
+  Warning  FailedScheduling  7s    default-scheduler  0/2 nodes are available: 2 Insufficient cpu.
+```
+
+If your Kubernetes cluster does not have enough memory resources to run the pod, the output might include messages like:
+```
+Events:
+  Type     Reason            Age   From               Message
+  ----     ------            ----  ----               -------
+  Warning  FailedScheduling  43s   default-scheduler  0/2 nodes are available: 2 Insufficient memory.
+```
+
+If you see either output, your Kubernetes cluster does not have enough resources to run the number of workers you specified in the `maxWorkers` parameter in your `values.yaml` file.
+For details on the resource requirements for MATLAB Parallel Server workers, see the MathWorks documentation for [MATLAB Parallel Server Product Requirements](https://www.mathworks.com/support/requirements/matlab-parallel-server.html).
+By default, each worker pod requests 2 vCPU and 8GB of memory. If your cluster does not have enough resources, either
+- Add more nodes to your Kubernetes cluster or replace your existing nodes with nodes that have more CPU and memory resources.
+- Modify your `values.yaml` file to decrease the value of the `maxWorkers` parameter.
+- Modify your `values.yaml` file to decrease the values of the `workerMemoryRequest` and `workerMemoryLimit` parameters. A minimum of 4GB per MATLAB worker is recommended. If you are using Simulink, a minimum of 8GB per worker is recommended.
+
+If you modified your `values.yaml` file, uninstall the MATLAB Job Scheduler Helm chart following the instructions in [Uninstall MATLAB Job Scheduler](#uninstall-matlab-job-scheduler), then reinstall the Helm chart following the instructions in [Install Helm chart](#install-helm-chart).
+
+If your Kubernetes cluster nodes do not have enough ephemeral storage to pull the MATLAB Parallel Server Docker image, the output of `kubectl describe pods` might include messages like:
+```
+Events:
+  Type     Reason               Age    From               Message
+  ----     ------               ----   ----               -------
+  Normal   Scheduled            4m49s  default-scheduler  Successfully assigned default/mjs-worker-1-fd697549aeca4c2ab0f1bcb4fe819b0f-5d78457d5c-lcpv5 to my-node
+  Normal   Pulling              4m49s  kubelet            Pulling image "ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-worker-image:r2024a"
+  Warning  Evicted              88s    kubelet            The node was low on resource: ephemeral-storage. Threshold quantity: 3219965180, available: 1313816Ki.
+```
+
+For details on the node storage requirements, see [Requirements](#requirements).
+If your nodes do not have enough ephemeral storage, either
+- Replace your Kubernetes nodes with nodes that have more storage.
+- Instead of pulling the MATLAB Parallel Server Docker image, mount MATLAB Parallel Server from a PersistentVolume. To learn more, see [Mount MATLAB from a PersistentVolume](#mount-matlab-from-a-persistentvolume).
+
 ## Uninstall MATLAB Job Scheduler
 
-To uninstall MATLAB Job Scheduler from your Kubernetes cluster, run this command:
+To uninstall the MATLAB Job Scheduler Helm chart from your Kubernetes cluster, run this command:
 ```
 helm uninstall mjs --namespace mjs
 ```
@@ -227,6 +306,13 @@ If you created a custom load balancer service, delete the service:
 ```
 kubectl delete service mjs-ingress-proxy --namespace mjs
 ```
+
+If you want to reinstall the MATLAB Job Scheduler Helm chart, you must ensure that the load balancer service is deleted first.
+To check the status of the load balancer service, run:
+```
+kubectl get service mjs-ingress-proxy --namespace mjs
+```
+If the load balancer service appears, wait for some time, then run the command again to confirm that the load balancer service is not found before proceeding with the MATLAB Job Scheduler Helm chart reinstallation.
 
 ## Examples
 
@@ -310,6 +396,58 @@ end
 ```
 
 ## Advanced Setup Steps
+
+### Customize Worker Image
+
+The MATLAB Parallel Server workers run on an image that contains MATLAB, Simulink, all MathWorks toolboxes, and the Deep Learning Support Packages by default.
+If you want to increase the performance of creating worker pods or customise the toolboxes or support packages used, you have two options:
+1. Build a custom Docker image with only the toolboxes you need
+2. Mount the MATLAB installation from a PersistentVolume
+
+#### Build Custom Docker Image
+
+To build a custom Docker image, see [Create a MATLAB Parallel Server Container Image](images/worker/README.md).
+Push the image to a repository that is visible to your Kubernetes cluster.
+
+Modify your `values.yaml` file to set the `workerImage` and `workerImageTag` parameters to the URI and tag of your image before installating the Helm chart.
+
+#### Mount MATLAB from a PersistentVolume
+
+To mount MATLAB from a PersistentVolume, create a PersistentVolume and PersistentVolumeClaim with access mode `ReadOnlyMany` containing a MATLAB Parallel Server installation.
+For example, if your Kubernetes cluster runs on-premise, you could create a PersistentVolume from an NFS server containing the MATLAB Parallel Server installation.
+For details on creating the PersistentVolumeClaim, see the [Create Persistent Volumes](#create-persistent-volumes) section.
+
+Modify your `values.yaml` file to set the `matlabPVC` parameter to the name of your PersistentVolumeClaim before installating the Helm chart.
+The worker pods will now use the image URI specified in the `matlabDepsImage` parameter instead of the `workerImage` parameter.
+
+### Run Multiple MATLAB Parallel Server Versions
+
+You can use multiple versions of MATLAB Parallel Server in a single MATLAB Job Scheduler cluster.
+When you upgrade to a newer release of MATLAB Parallel Server on your cluster, users can continue to submit jobs from both newer and older releases of the MATLAB client.
+The additional MATLAB Parallel Server versions you use must be version R2024a or newer and must be older than the version of MATLAB Job Scheduler you are using.
+
+Create a PersistentVolume and PersistentVolumeClaim for each additional MATLAB Parallel Server installation you want to use.
+The root directory of each PersistentVolume must be the MATLAB root folder.
+Modify your `values.yaml` file to set the `additionalMatlabPVCs` parameter to the names of the PersistentVolumeClaims.
+
+For example, to use an additional PersistentVolumeClaim `matlab-r2024a-pvc`, add the following line to your `values.yaml` file:
+```
+additionalMatlabPVCs:
+- matlab-r2024a-pvc
+```
+
+### Configure LDAP over SSL
+
+When you use an LDAP server configured over SSL, you must add the LDAPS SSL certificate to your Kubernetes cluster.
+To obtain the SSL server certificate, follow the instructions in [Connect to LDAP Server to Get Server SSL Certificate](https://www.mathworks.com/help/matlab-parallel-server/configure-ldap-server-authentication-for-matlab-job-scheduler.html#mw_fe8d0f90-2854-42b9-9e04-a2f25a295e61) on the MathWorks website.
+
+If you use a prebuilt job manager image (default behavior), create a Kubernetes secret containing the server SSL certificate.
+Replace `<path>` with the path to your server SSL certificate.
+```
+kubectl create secret generic mjs-ldap-secret --namespace mjs --from-file=cert.pem=<path>
+```
+
+If you use a persistent volume for the job manager pod (`matlabPVC` is set to a non-empty string and `jobManagerUsesPVC` is set to `true` in your `values.yaml` file), you must add your certificate to the Java trust store of the MATLAB Parallel Server installation in your persistent volume. For detailed instructions, see [Add Certificate to Java Trust Store](https://mathworks.com/help/matlab-parallel-server/configure-ldap-server-authentication-for-matlab-job-scheduler.html#mw_fe8d0f90-2854-42b9-9e04-a2f25a295e61) on the MathWorks website.
 
 ### Customize Load Balancer
 

@@ -1,0 +1,4 @@
+{{- /* Copyright 2024 The MathWorks, Inc. */}}
+{{- if .Release.IsUpgrade }}
+  {{- fail (printf "Helm upgrade is not supported for this chart. To change the configuration or chart version of MATLAB Job Scheduler in Kubernetes, run 'helm uninstall %s --namespace %s' to remove the existing Helm release, then install a new Helm release with the values and chart version of your choice." .Release.Name .Release.Namespace) }}
+{{- end }}

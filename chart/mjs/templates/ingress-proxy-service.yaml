@@ -1,0 +1,37 @@
+{{- if and .Values.autoCreateLoadBalancer (not .Values.internalClientsOnly) }}
+# LoadBalancer Service for routing traffic from outside the Kubernetes cluster.
+# Copyright 2024 The MathWorks, Inc.
+{{- $name := include "resources.ingressProxy" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+spec:
+  type: LoadBalancer
+  selector:
+   app: {{ $name }}
+  ports:
+  # Job manager ports
+  - name: "tcp-lookup"
+    protocol: TCP
+    appProtocol: TCP
+    port: {{ include "derived.lookupPort" . }}
+    targetPort: {{ include "derived.lookupPort" . }}
+  - name: "tcp-jobmanager"
+    protocol: TCP
+    appProtocol: TCP
+    port: {{ include "derived.jobManagerPort" . }}
+    targetPort: {{ include "derived.jobManagerPort" . }}
+
+  # Pool proxy ports
+  {{- range untilStep 0 (include "derived.numProxies" . | int) 1 }}
+  {{- $poolProxyPort := add $.Values.poolProxyBasePort . }}
+  - name: {{ printf "tcp-pool-proxy-%d" (add . 1) }}
+    protocol: TCP
+    appProtocol: TCP
+    port: {{ $poolProxyPort }}
+    targetPort: {{ $poolProxyPort }}
+  {{ end -}}
+{{ end -}}

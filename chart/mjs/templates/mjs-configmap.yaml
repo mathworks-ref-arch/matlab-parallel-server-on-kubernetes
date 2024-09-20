@@ -1,0 +1,114 @@
+# ConfigMap containing scripts for the job manager and worker pods.
+# Copyright 2024 The MathWorks, Inc.
+{{- $localMJSDef := "/tmp/mjs_def.sh" }}
+{{- $binDir := printf "%s/toolbox/parallel/bin/" (include "paths.matlabroot" .) }}
+{{- $basePort := .Values.basePort | int }}
+{{- $workerStartedFile := "/tmp/worker-started" }}
+{{- $trustStorePath := printf "%s/sys/java/jre/glnxa64/jre/lib/security/cacerts" (include "paths.matlabroot" .) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "resources.mjsConfigMap" . }}
+data:
+  mjs_def.sh: |
+    # Common mjs_def.sh file for the job manager and workers
+    BASE_PORT={{ .Values.basePort }}
+    MAX_LINUX_WORKERS={{ .Values.maxWorkers }}
+    CHECKPOINTBASE={{ include "paths.checkpointbase" . }}
+    PIDBASE=/tmp/pid
+    USE_SECURE_COMMUNICATION={{ .Values.useSecureCommunication }}
+    REQUIRE_CLIENT_CERTIFICATE={{ .Values.requireClientCertificate }}
+    REQUIRE_SCRIPT_VERIFICATION={{ .Values.requireScriptVerification }}
+    SECURITY_LEVEL={{ .Values.securityLevel }}
+    SHARED_SECRET_FILE={{ include "paths.secretPath" . }}
+    USE_ONLINE_LICENSING={{ .Values.useOnlineLicensing }}
+    ADMIN_USER={{ .Values.adminUser }}
+    {{- if .Values.ldapURL }}
+    USE_LDAP_SERVER_AUTHENTICATION=true
+    LDAP_URL={{ .Values.ldapURL | quote }}
+    LDAP_SECURITY_PRINCIPAL_FORMAT={{ .Values.ldapSecurityPrincipalFormat | quote }}
+    LDAP_SYNCHRONIZATION_INTERVAL_SECS={{ .Values.ldapSynchronizationIntervalSecs | quote }}
+    {{- end }}
+
+  jobManager.sh: |
+    # Script to run on the MATLAB Job Scheduler job manager pod
+    set -o errexit
+
+    # Set up the mjs_def file
+    cp {{ printf "%s/mjs_def.sh" (include "paths.configDir" .) }} {{ $localMJSDef }}
+    echo "HOSTNAME={{ include "resources.jobManager" . }}" >> {{ $localMJSDef }}
+    echo "LOGBASE={{ include "paths.logbase" . }}" >> {{ $localMJSDef }}
+
+    {{ if eq (include "derived.addLDAPCert" .) "true" -}}
+    # Add LDAP certificate to the Java trust store
+    chmod +w {{ $trustStorePath }}
+    yes | {{ include "paths.matlabroot" . }}/sys/java/jre/glnxa64/jre/bin/keytool -import -keystore {{ $trustStorePath }} -file {{ include "paths.ldapCert" . }} -storepass changeit > /dev/null
+ 
+    {{ end -}}
+    # Start the MJS service
+    {{ printf "%s/mjs" $binDir }} start -mjsdef {{ $localMJSDef }} -loglevel {{ .Values.logLevel }} -disablereliableconnections
+
+    # Start the job manager
+    {{- $jmCommand := printf "%s/startjobmanager -name \"%s\" -baseport %d" $binDir .Values.jobManagerName $basePort }}
+    {{- if .Values.requireClientCertificate }}
+      {{- $jmCommand = printf "%s -certificate \"%s\"" $jmCommand (include "paths.certPath" .) }}
+    {{- end }}
+    {{- if .Values.requireScriptVerification }}
+      {{- $jmCommand = printf "%s -secretfile \"%s\"" $jmCommand (include "paths.secretPath" .) }}
+    {{- end }}
+    {{ $jmCommand }} || echo "startjobmanager failed; there may already be a job manager running"
+
+    # Keep the container running
+    sleep infinity
+
+  worker.sh: |
+    # Script to run on worker pods
+    set -o errexit
+
+    # Set up the mjs_def file
+    cp {{ printf "%s/mjs_def.sh" (include "paths.configDir" .) }} {{ $localMJSDef }}
+    LOGBASE={{ include "paths.logbase" . }}/${WORKER_NAME}
+    echo "LOGBASE=${LOGBASE}" >> {{ $localMJSDef }}
+    echo "HOSTNAME=${HOSTNAME}" >> {{ $localMJSDef }}
+    echo "MJS_ADDITIONAL_MATLABROOTS=${MJS_ADDITIONAL_MATLABROOTS}" >> {{ $localMJSDef }}
+
+    # Ensure log directory exists and is writeable by workers
+    if [ ! -d "${LOGBASE}" ]; then
+      mkdir -p "${LOGBASE}"
+    fi
+    chmod o+w "${LOGBASE}"
+
+    # Create a user to run MATLAB as
+    useradd --create-home {{ .Values.workerUsername }} || echo "User {{ .Values.workerUsername }} already exists"
+    echo {{ printf "%s:%s" .Values.workerUsername .Values.workerPassword }} | chpasswd
+
+    # Start the MJS service
+    {{ printf "%s/mjs" $binDir }} start -mjsdef {{ $localMJSDef }} -loglevel {{ .Values.logLevel }} -disablereliableconnections
+
+    # Start the worker
+    {{- $workerCmd := printf "%s/startworker -jobmanager \"%s\" -jobmanagerhost \"%s\" -name \"${WORKER_NAME}\" -baseport %d" $binDir .Values.jobManagerName (include "resources.jobManager" .) $basePort }}
+    {{- if .Values.requireScriptVerification }}
+      {{- $workerCmd = printf "%s -secretfile \"%s\"" $workerCmd (include "paths.secretPath" .) }}
+    {{- end }}
+    {{ $workerCmd }}
+
+    # Add a file to indicate that startworker is complete
+    touch {{ $workerStartedFile }}
+
+    # Keep the container running
+    sleep infinity
+
+  stopWorker.sh: |
+    # Script to gracefully shut down a worker
+    # First, wait for startworker to have finished successfully
+    while [ ! -f {{ $workerStartedFile | quote }} ]]; do
+      echo "Waiting for startworker to finish"
+      sleep 1
+    done
+
+    # Stop the worker
+    {{- $stopCmd := printf "%s/stopworker -clean -name ${WORKER_NAME}" $binDir }}
+    {{- if .Values.requireScriptVerification }}
+      {{- $stopCmd = printf "%s -secretfile \"%s\"" $stopCmd (include "paths.secretPath" .) }}
+    {{- end }}
+    {{ $stopCmd }}

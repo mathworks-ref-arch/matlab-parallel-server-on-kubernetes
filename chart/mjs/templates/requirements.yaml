@@ -1,0 +1,15 @@
+# Copyright 2024 The MathWorks, Inc.
+
+{{- required "Specify a value for the maximum number of MATLAB Job Scheduler workers to start using the maxWorkers parameter." .Values.maxWorkers }}
+
+{{- if not (hasKey .Values "checkpointPVC") }}
+    {{- required "Specify the name of a Persistent Volume Claim to store persistent job data using the checkpointPVC parameter. Set this parameter to an empty string if you do not want to persist job data, but be aware that you may lose job and task data unexpectedly between job manager restarts." .Values.checkpointPVC }}
+{{- end }}
+
+{{- if not (hasKey .Values "logPVC") }}
+    {{- required "Specify the name of a Persistent Volume Claim to store job manager logs using the logPVC parameter. Set this parameter to an empty string if you do not want to persist job manager logs between job manager restarts." .Values.logPVC }}
+{{- end }}
+
+{{- if not (hasKey .Values "workerLogPVC") }}
+    {{- required "Specify the name of a Persistent Volume Claim to store worker logs using the workerLogPVC parameter. Set this parameter to an empty string if you do not want to persist worker logs between worker restarts." .Values.workerLogPVC }}
+{{- end }}

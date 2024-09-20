@@ -1,0 +1,44 @@
+{{- if not .Values.internalClientsOnly }}
+# Deployment running HAproxy; this proxies incoming connections to the job manager
+# or workers via a single external load balancer.
+# Copyright 2024 The MathWorks, Inc.
+{{- $name := include "resources.ingressProxy" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+    spec:
+      # If set to false, disable creation of environment variables for services
+      enableServiceLinks: {{ include "derived.enableServiceLinks" . }}
+
+      containers:
+        - name: haproxy
+          image: {{ $.Values.haproxyImage }}
+          imagePullPolicy: {{ $.Values.haproxyImagePullPolicy }}
+
+          # Pass the config file path as an input argument
+          {{- $configDir := "/usr/local/etc/haproxy/" }}
+          args:
+          - "-f"
+          - {{ printf "%s/%s" $configDir (include "paths.ingressProxyConfig" .) }}
+
+          # Mount the config file from the ConfigMap
+          {{- $configVolName := "config-volume" }}
+          volumeMounts:
+            - name: {{ $configVolName }}
+              mountPath: {{ $configDir }}
+
+      volumes:
+        - name: {{ $configVolName }}
+          configMap:
+            name: {{ include "resources.ingressConfigMap" . }}
+{{ end -}}

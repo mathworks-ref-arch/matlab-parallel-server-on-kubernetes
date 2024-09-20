@@ -1,0 +1,25 @@
+# Internal Service for workers to use to communicate with the job manager
+# Copyright 2024 The MathWorks, Inc.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "resources.jobManager" . }}
+  labels:
+    app: {{ include "resources.jobManager" . }}
+spec:
+  type: ClusterIP
+
+  # Match the job manager pod
+  selector:
+    app: {{ include "resources.jobManager" . }}
+
+  ports:
+  {{- $minPort := .Values.basePort | int }}
+  {{- $maxPort := add $minPort 10 | int }}
+  {{- range untilStep $minPort $maxPort 1 }}
+  - name: {{ printf "tcp-%d" . }}
+    protocol: TCP
+    appProtocol: TCP
+    port: {{ . }}
+    targetPort: {{ . }}
+  {{- end }}
