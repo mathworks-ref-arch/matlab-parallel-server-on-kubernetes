@@ -114,6 +114,7 @@ func (c *Controller) checkRequiredResources() error {
 	checksToRun := []func() error{
 		c.checkAdminPassword,
 		c.checkLoadBalancer,
+		c.checkLDAPSecret,
 	}
 	for _, checkFunc := range checksToRun {
 		err := checkFunc()
@@ -185,24 +186,48 @@ func (c *Controller) checkLoadBalancer() error {
 
 // Check that the administrator password exists, if needed
 func (c *Controller) checkAdminPassword() error {
-	if c.config.SecurityLevel >= 2 {
-		// Check the admin password secret exists
-		adminSecretName := specs.AdminPasswordSecretName
-		secret, adminPasswordExists, err := c.client.SecretExists(specs.AdminPasswordSecretName)
-		if err != nil {
-			return err
-		}
-		createSecretInstruction := fmt.Sprintf(`To start an MJS cluster at security level %d, create an administrator password secret with command "kubectl create secret generic %s --from-literal=password=<password> --namespace %s", replacing "<password>" with a password of your choice.`, c.config.SecurityLevel, adminSecretName, c.config.Namespace)
-		if !adminPasswordExists {
-			return fmt.Errorf(`error: Administrator password secret "%s" does not exist in namespace "%s". %s`, adminSecretName, c.config.Namespace, createSecretInstruction)
-		}
+	if c.config.SecurityLevel < 2 {
+		// No admin password required for security level 1 or below
+		return nil
+	}
+	adminSecretName := specs.AdminPasswordSecretName
+	passwordKey := specs.AdminPasswordKey
+	secret, adminPasswordExists, err := c.client.SecretExists(adminSecretName)
+	if err != nil {
+		return err
+	}
+	createSecretInstruction := fmt.Sprintf(`To start an MJS cluster at security level %d, create an administrator password secret with command "kubectl create secret generic %s --from-literal=%s=<password> --namespace %s", replacing "<password>" with a password of your choice.`, c.config.SecurityLevel, adminSecretName, passwordKey, c.config.Namespace)
+	if !adminPasswordExists {
+		return fmt.Errorf(`error: Administrator password secret "%s" does not exist in namespace "%s". %s`, adminSecretName, c.config.Namespace, createSecretInstruction)
+	}
 
-		// Check that the secret contains the password key
-		passwordKey := specs.AdminPasswordKey
-		if _, ok := secret.Data[passwordKey]; !ok {
-			return fmt.Errorf(`error: Administrator password secret "%s" does not contain the key "%s". %s`, specs.AdminPasswordSecretName, passwordKey, createSecretInstruction)
-		}
+	// Check that the secret contains the password key
+	if _, ok := secret.Data[passwordKey]; !ok {
+		return fmt.Errorf(`error: Administrator password secret "%s" does not contain the key "%s". %s`, specs.AdminPasswordSecretName, passwordKey, createSecretInstruction)
+	}
+	return nil
+}
 
+// Check that the LDAP certificate secret exists, if needed
+func (c *Controller) checkLDAPSecret() error {
+	if c.config.LDAPCertPath == "" {
+		// No need for LDAP certificate
+		return nil
+	}
+	ldapSecretName := specs.LDAPSecretName
+	certFile := c.config.LDAPCertFile()
+	secret, exists, err := c.client.SecretExists(ldapSecretName)
+	if err != nil {
+		return err
+	}
+	createSecretInstruction := fmt.Sprintf(`To start an MJS using a secure LDAP server to authenticate user credentials, create an LDAP certificate secret with command "kubectl create secret generic %s --from-file=%s=<path> --namespace %s", replacing "<path>" with the path to the SSL certificate for your LDAP server.`, ldapSecretName, certFile, c.config.Namespace)
+	if !exists {
+		return fmt.Errorf(`error: LDAP certificate secret "%s" does not exist in namespace "%s". %s`, ldapSecretName, c.config.Namespace, createSecretInstruction)
+	}
+
+	// Check that the secret contains the expected filename
+	if _, ok := secret.Data[certFile]; !ok {
+		return fmt.Errorf(`error: LDAP certificate secret "%s" does not contain the file "%s". %s`, specs.AdminPasswordSecretName, certFile, createSecretInstruction)
 	}
 	return nil
 }

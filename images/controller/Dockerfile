@@ -1,7 +1,7 @@
 # Copyright 2024 The MathWorks, Inc.
 
 # Stage 1: Build the controller executable
-FROM golang:1.22.2 as builder
+FROM golang:1.22.4 AS builder
 WORKDIR /app
 COPY src/ /app
 RUN go version

@@ -18,6 +18,13 @@ metadata:
 data:
   {{ include "paths.controllerConfig" . }}: |
     {
+      "AdditionalMatlabPVCs": [
+      {{- $comma := "" }}
+      {{- range $matlabPVC := .Values.additionalMatlabPVCs }}
+        {{ $comma }}{{ $matlabPVC | quote }}
+        {{- $comma = "," }}
+      {{- end }}
+      ],
       "BasePort": {{ .Values.basePort | int }},
       "CertFileName": {{ include "paths.certFile" . | quote }},
       "CheckpointBase": {{ include "paths.checkpointbase" . | quote }},
@@ -45,6 +52,9 @@ data:
       "JobManagerGroupID": {{ .Values.jobManagerGroupID }},
       "JobManagerUserID": {{ .Values.jobManagerUserID }},
       "JobManagerUID": {{ uuidv4 | quote }},
+      {{ if eq (include "derived.addLDAPCert" .) "true" -}}
+      "LDAPCertPath": {{ include "paths.ldapCert" . | quote }},
+      {{- end }}
       "LivenessProbeFailureThreshold": {{ .Values.livenessProbeFailureThreshold | default 3 }},
       "LivenessProbePeriod": {{ .Values.livenessProbePeriod | default  300 }},
       "LivenessProbeTimeout": {{ .Values.livenessProbeTimeout | default 30 }},

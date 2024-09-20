@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -190,6 +191,68 @@ func TestExtraWorkerEnv(t *testing.T) {
 		}
 		assert.Truef(t, found, "Custom worker environment variable %s not found", key)
 		assert.Equalf(t, value, gotValue, "Unexpected value for worker environment variable %s", key)
+	}
+}
+
+func TestAdditionalMatlabRoots(t *testing.T) {
+	testCases := []struct {
+		name                          string
+		matlabPVCs                    []string
+		expectedAdditionalMatlabRoots string
+	}{
+		{"no_additional", []string{}, ""},
+		{"single_additional", []string{"my-extra-pvc"}, "/opt/additionalmatlab/my-extra-pvc"},
+		{"multiple_additional", []string{"matlab24a", "matlab24b", "matlab25a"}, "/opt/additionalmatlab/matlab24a:/opt/additionalmatlab/matlab24b:/opt/additionalmatlab/matlab25a"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(tt *testing.T) {
+			conf := createTestConfig()
+			conf.AdditionalMatlabPVCs = tc.matlabPVCs
+			specFactory := NewSpecFactory(conf, types.UID("abc"))
+			workerSpec := specFactory.GetWorkerDeploymentSpec(&WorkerInfo{
+				Name:     "worker1",
+				ID:       1,
+				HostName: "host1",
+			})
+			verifyAdditionalMatlabPVCs(tt, workerSpec, tc.matlabPVCs, tc.expectedAdditionalMatlabRoots)
+		})
+	}
+}
+
+// Check whether the LDAP certificate is mounted or not mounted based on the value of LDAPCertPath
+func TestMountLDAPCert(t *testing.T) {
+	testCases := []struct {
+		name              string
+		ldapCertDir       string
+		certFile          string
+		expectMountedCert bool
+	}{
+		{"no_ldap_cert", "", "", false},
+		{"ldap_cert", "/mount/dir", "my-cert.pem", true},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(tt *testing.T) {
+			ownerUID := types.UID("abcd1234")
+			conf := createTestConfig()
+			conf.LDAPCertPath = filepath.Join(tc.ldapCertDir, tc.certFile)
+
+			// Create a job manager spec
+			specFactory := NewSpecFactory(conf, ownerUID)
+			require.NotNil(tt, specFactory)
+			require.Equal(tt, conf, specFactory.config)
+			spec := specFactory.GetJobManagerDeploymentSpec()
+
+			// Check for the LDAP volume
+			pod := spec.Spec.Template.Spec
+			if tc.expectMountedCert {
+				vol, volMount := verifyPodHasVolume(tt, &pod, ldapCertVolumeName)
+				assert.NotNil(tt, vol.VolumeSource.Secret, "LDAP certificate volume should be a secret volume")
+				assert.Equal(tt, LDAPSecretName, vol.VolumeSource.Secret.SecretName, "LDAP volume should use LDAP secret name")
+				assert.Equal(tt, tc.ldapCertDir, volMount.MountPath, "LDAP volume should be mounted at LDAP mount path")
+			} else {
+				verifyPodDoesNotHaveVolume(tt, &pod, ldapCertVolumeName)
+			}
+		})
 	}
 }
 
@@ -392,14 +455,19 @@ func verifyDeployment(t *testing.T, deployment *appsv1.Deployment, ownerUID type
 	verifyPodHasVolume(t, &pod, logVolumeName)
 }
 
-func verifyPodHasVolume(t *testing.T, pod *corev1.PodSpec, volumeName string) {
-	assert.Truef(t, podHasVolume(pod, volumeName), "Volume %s not found in pod spec", volumeName)
-	assert.Truef(t, podHasVolumeMount(pod, volumeName), "Volume mount %s not found in container spec", volumeName)
+func verifyPodHasVolume(t *testing.T, pod *corev1.PodSpec, volumeName string) (*corev1.Volume, *corev1.VolumeMount) {
+	vol, hasVol := podHasVolume(pod, volumeName)
+	assert.Truef(t, hasVol, "Volume %s not found in pod spec", volumeName)
+	volMount, hasMount := podHasVolumeMount(pod, volumeName)
+	assert.Truef(t, hasMount, "Volume mount %s not found in container spec", volumeName)
+	return vol, volMount
 }
 
 func verifyPodDoesNotHaveVolume(t *testing.T, pod *corev1.PodSpec, volumeName string) {
-	assert.Falsef(t, podHasVolume(pod, volumeName), "Pod spec should not have volume %s", volumeName)
-	assert.Falsef(t, podHasVolumeMount(pod, volumeName), "Container spec should not have volume %s", volumeName)
+	_, hasVol := podHasVolume(pod, volumeName)
+	assert.Falsef(t, hasVol, "Pod spec should not have volume %s", volumeName)
+	_, hasMount := podHasVolumeMount(pod, volumeName)
+	assert.Falsef(t, hasMount, "Container spec should not have volume mount %s", volumeName)
 }
 
 func verifyEnvUnset(t *testing.T, pod *corev1.PodSpec, varName string) {
@@ -457,22 +525,22 @@ func createTestConfig() *config.Config {
 	}
 }
 
-func podHasVolume(pod *corev1.PodSpec, volumeName string) bool {
-	for _, v := range pod.Containers[0].VolumeMounts {
-		if v.Name == volumeName {
-			return true
-		}
-	}
-	return false
-}
-
-func podHasVolumeMount(pod *corev1.PodSpec, volumeName string) bool {
+func podHasVolume(pod *corev1.PodSpec, volumeName string) (*corev1.Volume, bool) {
 	for _, v := range pod.Volumes {
 		if v.Name == volumeName {
-			return true
+			return &v, true
 		}
 	}
-	return false
+	return nil, false
+}
+
+func podHasVolumeMount(pod *corev1.PodSpec, volumeName string) (*corev1.VolumeMount, bool) {
+	for _, v := range pod.Containers[0].VolumeMounts {
+		if v.Name == volumeName {
+			return &v, true
+		}
+	}
+	return nil, false
 }
 
 // Return a pod's environment variable value and whether or not it is set
@@ -496,4 +564,26 @@ func serviceHasPort(svc *corev1.Service, portNum int) bool {
 
 func verifyEnableServiceLinksFalse(t *testing.T, pod *corev1.PodSpec) {
 	assert.Falsef(t, *pod.EnableServiceLinks, "Pod should have EnableServiceLinks set to false")
+}
+
+func verifyAdditionalMatlabPVCs(t *testing.T, spec *appsv1.Deployment, matlabPVCs []string, expectedAdditionalMatlabRoots string) {
+	pod := spec.Spec.Template
+	for _, matlabPVC := range matlabPVCs {
+		found := false
+		for _, vol := range pod.Spec.Volumes {
+			if pvc := vol.VolumeSource.PersistentVolumeClaim; pvc != nil && pvc.ClaimName == matlabPVC {
+				found = true
+				break
+			}
+		}
+		assert.Truef(t, found, "Additional MATLAB volume %s should be mounted on pod %s", matlabPVC, pod.Name)
+	}
+
+	// Check the additional MATLAB root environment variable
+	varName := "MJS_ADDITIONAL_MATLABROOTS"
+	if expectedAdditionalMatlabRoots == "" {
+		verifyEnvUnset(t, &pod.Spec, varName)
+	} else {
+		verifyEnvVar(t, &pod.Spec, varName, expectedAdditionalMatlabRoots)
+	}
 }

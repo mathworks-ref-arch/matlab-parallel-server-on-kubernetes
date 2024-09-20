@@ -32,6 +32,7 @@ const (
 	mjsDefVolumeName     = "mjs-volume"
 	checkpointVolumeName = "checkpoint-volume"
 	proxyCertVolumeName  = "proxy-cert-volume"
+	ldapCertVolumeName   = "ldap-cert-volume"
 )
 
 // Secret names
@@ -39,12 +40,14 @@ const (
 	SharedSecretName        = "mjs-shared-secret"
 	AdminPasswordSecretName = "mjs-admin-password"
 	AdminPasswordKey        = "password"
+	LDAPSecretName          = "mjs-ldap-secret"
 )
 
 // File names
 const (
-	ProxyCertFileName = "certificate.json"
-	proxyCertDir      = "/proxy-cert"
+	ProxyCertFileName   = "certificate.json"
+	proxyCertDir        = "/proxy-cert"
+	additionalMatlabDir = "/opt/additionalmatlab"
 )
 
 // NewSpecFactory constructs a SpecFactory
@@ -152,6 +155,7 @@ func (s *SpecFactory) GetWorkerDeploymentSpec(w *WorkerInfo) *appsv1.Deployment 
 	if s.config.UsePoolProxy() && s.config.UseSecureCommunication {
 		addVolumeFromSecret(&pod, proxy.Name, proxyCertVolumeName, proxyCertDir, false)
 	}
+	s.addAdditionalMatlabPVCs(&pod)
 
 	return s.wrapPod(&pod, w.HostName, getLabelsForWorker(w))
 }
@@ -341,6 +345,9 @@ func (s *SpecFactory) GetJobManagerDeploymentSpec() *appsv1.Deployment {
 	}
 	if s.config.RequiresSecret() {
 		addVolumeFromSecret(&pod, SharedSecretName, secretVolumeName, s.config.SecretDir, true)
+	}
+	if s.config.LDAPCertPath != "" {
+		addVolumeFromSecret(&pod, LDAPSecretName, ldapCertVolumeName, s.config.LDAPCertDir(), true)
 	}
 
 	// Ensure this pod can resolve itself via its service name without having to use the Kubernetes service; this ensures it can resolve its own MJS service even if the Kubernetes service does not map to this pod
@@ -613,4 +620,20 @@ func (s *SpecFactory) setEnableServiceLinks(pod *corev1.PodSpec) {
 // Convert a service hostname to a hostname that can be resolved by pods in other namespaces
 func (s *SpecFactory) GetServiceHostname(svcName string) string {
 	return fmt.Sprintf("%s.%s.svc.cluster.local", svcName, s.config.Namespace)
+}
+
+// Mount volumes containing additional MATLAB installations from previous releases
+func (s *SpecFactory) addAdditionalMatlabPVCs(pod *corev1.PodSpec) {
+	if len(s.config.AdditionalMatlabPVCs) == 0 {
+		return
+	}
+	additionalMATLABRoots := []string{}
+	for _, matlabPVC := range s.config.AdditionalMatlabPVCs {
+		mountPath := filepath.Join(additionalMatlabDir, matlabPVC)
+		addVolumeFromPVC(pod, matlabPVC, matlabPVC, mountPath, true)
+		additionalMATLABRoots = append(additionalMATLABRoots, mountPath)
+	}
+	addEnv(&pod.Containers[0], map[string]string{
+		"MJS_ADDITIONAL_MATLABROOTS": strings.Join(additionalMATLABRoots, ":"),
+	})
 }
