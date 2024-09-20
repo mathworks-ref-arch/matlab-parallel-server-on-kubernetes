@@ -305,6 +305,51 @@ func TestInternalClientsOnly(t *testing.T) {
 	require.NoError(t, err, "error running second controller setup")
 }
 
+// Verify checks for the LDAP certificate secret
+func TestCheckLDAPCert(t *testing.T) {
+	testCases := []struct {
+		name          string
+		ldapMountPath string
+		addSecret     bool
+		expectError   bool
+	}{
+		{
+			name:          "no_ldap_cert_needed",
+			ldapMountPath: "",
+			addSecret:     false,
+			expectError:   false, // Secret is missing, but we don't need it anyway
+		}, {
+			name:          "ldap_cert_present",
+			ldapMountPath: "/test/dir",
+			addSecret:     true,
+			expectError:   false, // Secret is needed and present
+		}, {
+			name:          "ldap_cert_missing",
+			ldapMountPath: "/test/dir",
+			addSecret:     false,
+			expectError:   true, // Secret is needed but missing
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(tt *testing.T) {
+			conf := config.Config{
+				LDAPCertPath: tc.ldapMountPath,
+			}
+			controller, _ := createControllerWithFakeClient(tt, &conf)
+			if tc.addSecret {
+				createDummyLDAPCert(tt, controller)
+			}
+			err := controller.setup()
+			if tc.expectError {
+				assert.Error(tt, err, "expected error when LDAP certificate secret is missing")
+				assert.Contains(tt, err.Error(), specs.LDAPSecretName, "error message should contain name of LDAP certificate secret")
+			} else {
+				require.NoError(tt, err, "should not get an error for missing LDAP certificate secret")
+			}
+		})
+	}
+}
+
 // Verify that a shared secret was added to the K8s cluster
 func verifySharedSecretCreated(t *testing.T, controller *Controller) *certificate.SharedSecret {
 	secret, exists, err := controller.getExistingSharedSecret()
@@ -404,6 +449,13 @@ func createControllerWithFakeClient(t *testing.T, conf *config.Config) (*Control
 func createDummyAdminPassword(t *testing.T, controller *Controller) {
 	secretSpec := controller.specFactory.GetSecretSpec(specs.AdminPasswordSecretName)
 	secretSpec.Data[specs.AdminPasswordKey] = []byte("testpw")
+	_, err := controller.client.CreateSecret(secretSpec)
+	require.NoError(t, err)
+}
+
+func createDummyLDAPCert(t *testing.T, controller *Controller) {
+	secretSpec := controller.specFactory.GetSecretSpec(specs.LDAPSecretName)
+	secretSpec.Data[controller.config.LDAPCertFile()] = []byte("my-cert-pem")
 	_, err := controller.client.CreateSecret(secretSpec)
 	require.NoError(t, err)
 }

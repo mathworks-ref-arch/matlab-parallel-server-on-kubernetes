@@ -1,0 +1,153 @@
+########################################################################
+## Configuration File for Installing R2024b MathWorks Products
+########################################################################
+##
+## Use this file to configure an installation of MathWorks products
+## and support packages from the command line using the
+## MATLAB Package Manager (mpm). For example, you can set the
+## products and support packages you want to install and the 
+## folder where you want to install them.
+##
+## To configure your MATLAB installation:
+##
+## 1. Set configuration parameters by uncommenting lines that
+##    start with a single '#' and updating the values. The
+##    comments above each parameter describe the valid values.
+##
+## 2. Run mpm from the command line, using the --inputfile option
+##    to specify the full path to this configuration file.
+##
+##    mpm install --inputfile <full_path_to_this_file>
+##
+## You can download template input files for all supported releases from
+## https://github.com/mathworks-ref-arch/matlab-dockerfile/blob/main/MPM.md
+##
+########################################################################
+
+
+########################################################################
+## RELEASE
+########################################################################
+##
+## By default, mpm installs the latest versions of R2024b 
+## MathWorks products and support packages.
+##
+## To install a specific update for R2024b, set the desired update
+## number (for example, 1, 2, 3, and so on) and uncomment the
+## following line. An updateLevel of 0 installs the general release.
+
+# updateLevel=0
+
+
+########################################################################
+## SPECIFY INSTALLATION FOLDER
+########################################################################
+##
+## Specify the full path to the folder where you want to install MATLAB.
+## If you are adding products or support packages to an existing MATLAB
+## installation, specify the full path to the folder where MATLAB is installed.
+##
+## Example:
+## (Windows) destinationFolder=C:\Program Files\MATLAB\RXXXX
+## (Linux) destinationFolder=/usr/local/RXXXX
+## (macOS) destinationFolder=/Applications
+##
+## Set the desired value for destinationFolder and
+## uncomment the following line.
+
+destinationFolder=/opt/matlab
+
+
+########################################################################
+## INSTALL PRODUCTS
+########################################################################
+##
+## Uncomment the lines for the products you want to install.
+
+product.5G_Toolbox
+product.Aerospace_Toolbox
+product.Antenna_Toolbox
+product.Audio_Toolbox
+product.Automated_Driving_Toolbox
+product.Bioinformatics_Toolbox
+product.Bluetooth_Toolbox
+product.Communications_Toolbox
+product.Computer_Vision_Toolbox
+product.Control_System_Toolbox
+product.Curve_Fitting_Toolbox
+product.DSP_HDL_Toolbox
+product.DSP_System_Toolbox
+product.Database_Toolbox
+product.Datafeed_Toolbox
+product.Deep_Learning_HDL_Toolbox
+product.Deep_Learning_Toolbox
+product.Econometrics_Toolbox
+product.Embedded_Coder
+product.Filter_Design_HDL_Coder
+product.Financial_Instruments_Toolbox
+product.Financial_Toolbox
+product.Fixed-Point_Designer
+product.Fuzzy_Logic_Toolbox
+product.GPU_Coder
+product.Global_Optimization_Toolbox
+product.HDL_Coder
+product.HDL_Verifier
+product.Image_Acquisition_Toolbox
+product.Image_Processing_Toolbox
+product.Industrial_Communication_Toolbox
+product.Instrument_Control_Toolbox
+product.LTE_Toolbox
+product.Lidar_Toolbox
+product.MATLAB_Coder
+product.MATLAB_Compiler
+product.MATLAB_Compiler_SDK
+product.MATLAB_Report_Generator
+product.MATLAB_Test
+product.Mapping_Toolbox
+product.Medical_Imaging_Toolbox
+product.Model_Predictive_Control_Toolbox
+product.Navigation_Toolbox
+product.Optimization_Toolbox
+product.Parallel_Computing_Toolbox
+product.Partial_Differential_Equation_Toolbox
+product.Phased_Array_System_Toolbox
+product.Predictive_Maintenance_Toolbox
+product.RF_PCB_Toolbox
+product.RF_Toolbox
+product.ROS_Toolbox
+product.Radar_Toolbox
+product.Reinforcement_Learning_Toolbox
+product.Requirements_Toolbox
+product.Risk_Management_Toolbox
+product.Robotics_System_Toolbox
+product.Robust_Control_Toolbox
+product.Satellite_Communications_Toolbox
+product.Sensor_Fusion_and_Tracking_Toolbox
+product.SerDes_Toolbox
+product.Signal_Integrity_Toolbox
+product.Signal_Processing_Toolbox
+product.SoC_Blockset
+product.Statistics_and_Machine_Learning_Toolbox
+product.Symbolic_Math_Toolbox
+product.System_Composer
+product.System_Identification_Toolbox
+product.Text_Analytics_Toolbox
+product.UAV_Toolbox
+product.Vehicle_Dynamics_Blockset
+product.Vehicle_Network_Toolbox
+product.Vision_HDL_Toolbox
+product.WLAN_Toolbox
+product.Wavelet_Toolbox
+product.Wireless_HDL_Toolbox
+product.Wireless_Testbench
+
+
+########################################################################
+## CHECKSUM
+########################################################################
+##
+## NOTE: DO NOT edit this field. MathWorks uses this field to
+## check the integrity of the input file. Changing the value
+## of the checksum field invalidates this input file.
+
+?checksum=UjIwMjRi

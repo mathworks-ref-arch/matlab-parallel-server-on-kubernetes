@@ -38,6 +38,10 @@ useSecureCommunication: true # If true, use secure communication between service
 requireClientCertificate: true # If true, require clients to have a certificate to connect to the job manager
 requireScriptVerification: true # If true, require verification for privileged commands sent to the cluster
 clusterHost: "" # Custom host to use in the cluster profile. If unset, the cluster profile uses the external address of the load balancer
+adminUser: "admin" # Username of the cluster administrator
+ldapURL: "" # URL of an LDAP server to authenticate user credentials
+ldapSecurityPrincipalFormat: "" # Format of a security principal (user) for your LDAP server
+ldapSynchronizationIntervalSecs: 1800 # Frequency at which the cluster synchronizes with the LDAP server
 
 # Resource requests and limits
 workerCPULimit: "" # CPU limit for each worker process
@@ -80,6 +84,7 @@ useOnlineLicensing: false # Set to true to use Online Licensing
 matlabDepsImage: "mathworks/matlab-deps"
 matlabPVC: "" # Name of a PVC that contains a MATLAB Parallel Server installation to use. If this is set, the matlabDepsImage parameter is used for the worker containers instead of the matlabImage parameter
 jobManagerUsesPVC: false # If true, the job manager container mounts the MATLAB Parallel Server installation from the PVC rather than using the jobManagerImage parameter
+additionalMatlabPVCs: [] # Names of PersistentVolumeClaims containing installations of older MATLAB Parallel Server releases, specified as an array
 
 # Specify the maximum number of workers that the cluster can automatically resize to in your custom values.yaml file.
 # maxWorkers: 32

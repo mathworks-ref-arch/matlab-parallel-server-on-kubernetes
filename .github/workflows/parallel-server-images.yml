@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        matlab-release: [r2024a]
+        matlab-release: [r2024a, r2024b]
 
     steps:
       - name: Checkout repo

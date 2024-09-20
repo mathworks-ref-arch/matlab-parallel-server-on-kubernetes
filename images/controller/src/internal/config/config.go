@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 // Config contains configurable controller settings
 type Config struct {
+	AdditionalMatlabPVCs          []string
 	ControllerLogfile             string
 	BasePort                      int
 	CertFileName                  string
@@ -33,6 +35,7 @@ type Config struct {
 	JobManagerGroupID             int64
 	JobManagerUserID              int64
 	KubeConfig                    string
+	LDAPCertPath                  string
 	LivenessProbeFailureThreshold int32
 	LivenessProbePeriod           int32
 	LivenessProbeTimeout          int32
@@ -109,4 +112,19 @@ func (c *Config) RequiresSecret() bool {
 // UsePoolProxy returns true if we should install pool proxies
 func (c *Config) UsePoolProxy() bool {
 	return !c.InternalClientsOnly
+}
+
+// MountLDAP returns true if we should mount the LDAP secret
+func (c *Config) MountLDAP() bool {
+	return c.LDAPCertPath != ""
+}
+
+// LDAPCertDir returns the directory we should mount the LDAP certificate to
+func (c *Config) LDAPCertDir() string {
+	return filepath.Dir(c.LDAPCertPath)
+}
+
+// LDAPCertFile returns the name of the LDAP certificate file
+func (c *Config) LDAPCertFile() string {
+	return filepath.Base(c.LDAPCertPath)
 }

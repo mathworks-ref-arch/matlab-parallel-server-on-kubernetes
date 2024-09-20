@@ -20,3 +20,8 @@
 {{- define "derived.enableServiceLinks" -}}
 {{ .Values.enableServiceLinks | default false }}
 {{- end -}}
+
+# If we are using a secure LDAP server and not using a persistent volume claim for the job manager pod, we need to add the LDAP certificate to the job manager's secret store
+{{- define "derived.addLDAPCert" -}}
+{{ and (hasPrefix "ldaps://" .Values.ldapURL) (or (empty .Values.matlabPVC) (not .Values.jobManagerUsesPVC)) }}
+{{- end -}}

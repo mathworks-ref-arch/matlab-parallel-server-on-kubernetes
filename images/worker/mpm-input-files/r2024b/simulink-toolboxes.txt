@@ -1,0 +1,108 @@
+########################################################################
+## Configuration File for Installing R2024b MathWorks Products
+########################################################################
+##
+## Use this file to configure an installation of MathWorks products
+## and support packages from the command line using the
+## MATLAB Package Manager (mpm). For example, you can set the
+## products and support packages you want to install and the 
+## folder where you want to install them.
+##
+## To configure your MATLAB installation:
+##
+## 1. Set configuration parameters by uncommenting lines that
+##    start with a single '#' and updating the values. The
+##    comments above each parameter describe the valid values.
+##
+## 2. Run mpm from the command line, using the --inputfile option
+##    to specify the full path to this configuration file.
+##
+##    mpm install --inputfile <full_path_to_this_file>
+##
+## You can download template input files for all supported releases from
+## https://github.com/mathworks-ref-arch/matlab-dockerfile/blob/main/MPM.md
+##
+########################################################################
+
+
+########################################################################
+## RELEASE
+########################################################################
+##
+## By default, mpm installs the latest versions of R2024b 
+## MathWorks products and support packages.
+##
+## To install a specific update for R2024b, set the desired update
+## number (for example, 1, 2, 3, and so on) and uncomment the
+## following line. An updateLevel of 0 installs the general release.
+
+# updateLevel=0
+
+
+########################################################################
+## SPECIFY INSTALLATION FOLDER
+########################################################################
+##
+## Specify the full path to the folder where you want to install MATLAB.
+## If you are adding products or support packages to an existing MATLAB
+## installation, specify the full path to the folder where MATLAB is installed.
+##
+## Example:
+## (Windows) destinationFolder=C:\Program Files\MATLAB\RXXXX
+## (Linux) destinationFolder=/usr/local/RXXXX
+## (macOS) destinationFolder=/Applications
+##
+## Set the desired value for destinationFolder and
+## uncomment the following line.
+
+destinationFolder=/opt/matlab
+
+
+########################################################################
+## INSTALL PRODUCTS
+########################################################################
+##
+## Uncomment the lines for the products you want to install.
+
+product.AUTOSAR_Blockset
+product.Aerospace_Blockset
+product.C2000_Microcontroller_Blockset
+product.DDS_Blockset
+product.Mixed-Signal_Blockset
+product.Motor_Control_Blockset
+product.Powertrain_Blockset
+product.RF_Blockset
+product.SimBiology
+product.SimEvents
+product.Simscape
+product.Simscape_Battery
+product.Simscape_Driveline
+product.Simscape_Electrical
+product.Simscape_Fluids
+product.Simscape_Multibody
+product.Simulink_3D_Animation
+product.Simulink_Check
+product.Simulink_Coder
+product.Simulink_Compiler
+product.Simulink_Control_Design
+product.Simulink_Coverage
+product.Simulink_Design_Optimization
+product.Simulink_Design_Verifier
+product.Simulink_Desktop_Real-Time
+product.Simulink_Fault_Analyzer
+product.Simulink_PLC_Coder
+product.Simulink_Real-Time
+product.Simulink_Report_Generator
+product.Simulink_Test
+product.Stateflow
+
+
+########################################################################
+## CHECKSUM
+########################################################################
+##
+## NOTE: DO NOT edit this field. MathWorks uses this field to
+## check the integrity of the input file. Changing the value
+## of the checksum field invalidates this input file.
+
+?checksum=UjIwMjRi

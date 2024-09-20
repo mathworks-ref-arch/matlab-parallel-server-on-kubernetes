@@ -76,3 +76,8 @@ config.json
 {{- define "paths.ingressProxyConfig" -}}
 haproxy.cfg
 {{- end -}}
+
+# Path to mounted LDAP certificate
+{{- define "paths.ldapCert" -}}
+/mjs/ldap/cert.pem
+{{- end -}}
