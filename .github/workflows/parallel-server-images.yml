@@ -76,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        matlab-release: [r2024a]
+        matlab-release: [r2024a, r2024b]
 
     env:
       WORKER_IMAGE: ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-worker-image
