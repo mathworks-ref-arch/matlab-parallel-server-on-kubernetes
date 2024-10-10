@@ -256,6 +256,43 @@ func TestMountLDAPCert(t *testing.T) {
 	}
 }
 
+// Check whether the metrics secret is mounted or not
+func TestMountMetricsSecret(t *testing.T) {
+	const metricsDir = "/test/metrics"
+	testCases := []struct {
+		name             string
+		useSecureMetrics bool
+	}{
+		{"insecure_metrics", false},
+		{"secure_metrics", true},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(tt *testing.T) {
+			ownerUID := types.UID("abcd1234")
+			conf := createTestConfig()
+			conf.UseSecureMetrics = tc.useSecureMetrics
+			conf.MetricsCertDir = metricsDir
+
+			// Create a job manager spec
+			specFactory := NewSpecFactory(conf, ownerUID)
+			require.NotNil(tt, specFactory)
+			require.Equal(tt, conf, specFactory.config)
+			spec := specFactory.GetJobManagerDeploymentSpec()
+
+			// Check for the metrics secret volume
+			pod := spec.Spec.Template.Spec
+			if tc.useSecureMetrics {
+				vol, volMount := verifyPodHasVolume(tt, &pod, metricsCertVolumeName)
+				assert.NotNil(tt, vol.VolumeSource.Secret, "LDAP certificate volume should be a secret volume")
+				assert.Equal(tt, MetricsSecretName, vol.VolumeSource.Secret.SecretName, "Metrics volume should use metrics secret name")
+				assert.Equal(tt, metricsDir, volMount.MountPath, "Metrics volume should be mounted at metrics certificate mount path")
+			} else {
+				verifyPodDoesNotHaveVolume(tt, &pod, metricsCertVolumeName)
+			}
+		})
+	}
+}
+
 func verifyWorkerSpecs(t *testing.T, specFactory *SpecFactory, conf *config.Config, ownerUID types.UID) {
 	assert := assert.New(t)
 	testWorker := &WorkerInfo{

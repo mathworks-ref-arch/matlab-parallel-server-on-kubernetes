@@ -449,6 +449,56 @@ kubectl create secret generic mjs-ldap-secret --namespace mjs --from-file=cert.p
 
 If you use a persistent volume for the job manager pod (`matlabPVC` is set to a non-empty string and `jobManagerUsesPVC` is set to `true` in your `values.yaml` file), you must add your certificate to the Java trust store of the MATLAB Parallel Server installation in your persistent volume. For detailed instructions, see [Add Certificate to Java Trust Store](https://mathworks.com/help/matlab-parallel-server/configure-ldap-server-authentication-for-matlab-job-scheduler.html#mw_fe8d0f90-2854-42b9-9e04-a2f25a295e61) on the MathWorks website.
 
+### Configure Cluster Monitoring Metrics
+
+You can configure MATLAB Job Scheduler to export cluster monitoring metrics.
+This feature is supported for MATLAB Job Scheduler release R2024b or later.
+To export cluster monitoring metrics for MATLAB Job Scheduler releases older than R2024b, set the `jobManagerImageTag` parameter in your Helm values file to `r2024b` to use a newer release for the job manager.
+
+To enable cluster monitoring metrics, set the following values in your `values.yaml` file:
+```yaml
+exportMetrics: true
+metricsPort: 8001
+useSecureMetrics: true
+openMetricsPortOutsideKubernetes: false
+```
+Modify the following values:
+- `metricsPort` &mdash; Specify the port for exporting metrics on the HTTP(S) server.
+- `useSecureMetrics` &mdash; Set this to true to export metrics over an encrypted HTTPS connection. Set to false to disable encryption and export metrics on an HTTP server.
+- `openMetricsPortOutsideKubernetes` &mdash; Set this to true to expose the metrics endpoint outside of the Kubernetes cluster. Set to false if you only want to scrape metrics from another pod inside the Kubernetes cluster.
+
+If you set `useSecureMetrics` to true, by default the Helm chart generates SSL certificates for you.
+
+Optionally, you can provide your own SSL certificates that the job manager uses to encrypt metrics.
+The server SSL certificate must include a Subject Alternative Name (SAN) that corresponds to a DNS name or domain directed at the job manager.
+- If you set `openMetricsPortOutsideKubernetes` to true, use the domain associated with the load balancer addresses generated within your Kubernetes cluster, or configure a static DNS name that routes to your load balancer after installing the MJS Helm Chart.
+- If you set `openMetricsPortOutsideKubernetes` to false, the DNS name of the job manager is `mjs-job-manager.mjs.svc.cluster.local`.
+
+To use your own SSL certificates, create a Kubernetes secret.
+Using the `kubectl` command, specify the paths to the CA certificate used to sign your client certificate, the certificate to use for the server, and the private key to use for the server. For example, use the CA certificate `ca_cert`, server certificate `server_cert`, and server private key `server_key`:
+```
+kubectl create secret generic mjs-metrics-secret --from-file=ca.crt=ca_cert --from-file=jobmanager.crt=server_cert --from-file=jobmanager.key=server_key --namespace mjs
+```
+
+Install the MATLAB Job Scheduler Helm chart.
+
+#### Integrate with Grafana and Prometheus
+
+To integrate your cluster with Grafana&reg; and Prometheus&reg;, follow the instructions in the [Cluster Monitoring Integration for MATLAB Job Scheduler](https://github.com/mathworks/cluster-monitoring-integration-for-matlab-job-scheduler) GitHub repository.
+
+Configure Prometheus to target the metrics endpoint `job-manager-host:metricsPort`, where `metricsPort` is the value you set in your `values.yaml` file.
+- If you set `openMetricsPortOutsideKubernetes` to true, `job-manager-host` is the external IP address or DNS name of your load balancer service. Find this by running `kubectl get services -n mjs mjs-ingress-proxy`.
+- If you set `openMetricsPortOutsideKubernetes` to false, Prometheus must run inside the same Kubernetes cluster as MATLAB Job Scheduler. Set `job-manager-host` to `mjs-job-manager.mjs.svc.cluster.local`.
+
+If you set `useSecureMetrics` to true, configure Prometheus with certificates to authenticate with the metrics server.
+- If you provided your own SSL certificates, use client certificates corresponding to the certificates you used to set up the metrics server.
+- If the Helm chart generated SSL certificates for you, download and use the generated client certificates from the Kubernetes secret `mjs-metrics-client-certs`:
+```
+kubectl get secrets mjs-metrics-client-certs --template="{{.data.ca.crt | base64decode}}" --namespace mjs > ca.crt
+kubectl get secrets mjs-metrics-client-certs --template="{{.data.prometheus.crt | base64decode}}" --namespace mjs > prometheus.crt
+kubectl get secrets mjs-metrics-client-certs --template="{{.data.prometheus.key | base64decode}}" --namespace mjs > prometheus.key
+```
+
 ### Customize Load Balancer
 
 MATLAB Job Scheduler in Kubernetes uses a Kubernetes load balancer service to expose MATLAB Job Scheduler to MATLAB clients running outside of the Kubernetes cluster.

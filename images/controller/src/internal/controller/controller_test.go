@@ -2,7 +2,9 @@
 package controller
 
 import (
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"testing"
 	"time"
@@ -55,58 +57,80 @@ func TestRunAutoscaling(t *testing.T) {
 	<-doneChan
 }
 
-func TestVerifySetup(t *testing.T) {
+func TestSetup(t *testing.T) {
 	testCases := []struct {
-		name                   string
-		useSecureCommunication bool
-		securityLevel          int
+		name                             string
+		useSecureCommunication           bool
+		securityLevel                    int
+		useCustomHost                    bool
+		useSecureMetrics                 bool
+		openMetricsPortOutsideKubernetes bool
 	}{
-		{"insecure", false, 0},
-		{"secure_sl0", true, 0},
-		{"insecure_sl2", false, 2},
-		{"secure_sl2", true, 2},
+		{"insecure", false, 0, false, false, false},
+		{"secure_sl0", true, 0, false, false, false},
+		{"insecure_sl2", false, 2, false, false, false},
+		{"secure_sl2", true, 2, false, false, false},
+		{"custom_host", false, 0, true, false, false},
+		{"secure_metrics_internal", false, 0, false, true, false},
+		{"secure_metrics_external", false, 0, true, true, true},
+		{"secure_metrics_custom_host", false, 0, true, true, true},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(tt *testing.T) {
-			verifySetup(tt, tc.useSecureCommunication, tc.securityLevel, false)
+			verifySetup(tt, SetupTestInputs{
+				UseSecureCommunication:           tc.useSecureCommunication,
+				SecurityLevel:                    tc.securityLevel,
+				UseCustomHost:                    tc.useCustomHost,
+				UseSecureMetrics:                 tc.useSecureMetrics,
+				OpenMetricsPortOutsideKubernetes: tc.openMetricsPortOutsideKubernetes,
+			})
 		})
 	}
 }
 
-// Test use of a custom cluster host name in the cluster profile
-func TestCustomClusterHost(t *testing.T) {
-	verifySetup(t, false, 0, true)
+// Inputs for setup verificiation
+type SetupTestInputs struct {
+	UseSecureCommunication           bool
+	SecurityLevel                    int
+	UseCustomHost                    bool
+	UseSecureMetrics                 bool
+	OpenMetricsPortOutsideKubernetes bool
 }
 
 // Test the full setup workflow, with all secrets and the cluster profile being created
-func verifySetup(t *testing.T, useSecureCommunication bool, securityLevel int, useCustomHost bool) {
+func verifySetup(t *testing.T, inputs SetupTestInputs) {
+	const metricsDir = "/test/metrics"
 	conf := config.Config{
-		JobManagerName:         "my-k8s-mjs",
-		Namespace:              "test",
-		DeploymentName:         "my-controller",
-		LoadBalancerName:       "my-mjs-loadbalancer",
-		SecretFileName:         "secret.json",
-		CertFileName:           "cert.json",
-		BasePort:               5000,
-		PoolProxyBasePort:      30000,
-		WorkersPerPoolProxy:    100,
-		MaxWorkers:             10,
-		UseSecureCommunication: useSecureCommunication,
-		SecurityLevel:          securityLevel,
+		JobManagerName:                   "my-k8s-mjs",
+		Namespace:                        "test",
+		DeploymentName:                   "my-controller",
+		LoadBalancerName:                 "my-mjs-loadbalancer",
+		SecretFileName:                   "secret.json",
+		CertFileName:                     "cert.json",
+		BasePort:                         5000,
+		PoolProxyBasePort:                30000,
+		WorkersPerPoolProxy:              100,
+		MaxWorkers:                       10,
+		UseSecureCommunication:           inputs.UseSecureCommunication,
+		SecurityLevel:                    inputs.SecurityLevel,
+		MetricsCertDir:                   metricsDir,
+		UseSecureMetrics:                 inputs.UseSecureMetrics,
+		OpenMetricsPortOutsideKubernetes: inputs.OpenMetricsPortOutsideKubernetes,
 	}
-	if useCustomHost {
+	if inputs.UseCustomHost {
 		conf.ClusterHost = "my-custom-host"
 	}
 	controller, lbAddress := createControllerWithFakeClient(t, &conf)
-	if securityLevel >= 2 {
+	if inputs.SecurityLevel >= 2 {
 		createDummyAdminPassword(t, controller)
 	}
 
 	err := controller.setup()
 	require.NoError(t, err, "error running first controller setup")
 
+	// Check the shared secret
 	var secret *certificate.SharedSecret
-	if useSecureCommunication {
+	if inputs.UseSecureCommunication {
 		secret = verifySharedSecretCreated(t, controller)
 	} else {
 		verifyNoSecret(t, controller.client, specs.SharedSecretName)
@@ -116,10 +140,17 @@ func verifySetup(t *testing.T, useSecureCommunication bool, securityLevel int, u
 
 	// Check the profile was created with either the custom host name or the load balancer external address
 	expectedHost := conf.ClusterHost
-	if !useCustomHost {
-		expectedHost = fmt.Sprintf("%s:%d", lbAddress, controller.config.BasePort)
+	if !inputs.UseCustomHost {
+		expectedHost = lbAddress
 	}
 	verifyClusterProfileCreated(t, controller, secret, expectedHost, false)
+
+	// Check the metrics secrets
+	if inputs.UseSecureMetrics {
+		verifyMetricsSecretsCreated(t, controller, expectedHost)
+	} else {
+		verifyNoSecret(t, controller.client, specs.MetricsSecretName)
+	}
 
 	// Verify that we can run setup again without erroring
 	// (this can occur if the controller container restarts, and a previous container already created the resources)
@@ -188,8 +219,7 @@ func TestCreateProfile(t *testing.T) {
 			}
 			err = controller.createProfile(secret)
 			require.NoError(t, err)
-			expectedHost := fmt.Sprintf("%s:%d", lbAddress, controller.config.BasePort)
-			verifyClusterProfileCreated(tt, controller, secret, expectedHost, tc.requireClientCertificate)
+			verifyClusterProfileCreated(tt, controller, secret, lbAddress, tc.requireClientCertificate)
 		})
 	}
 }
@@ -278,6 +308,7 @@ func TestInternalClientsOnly(t *testing.T) {
 		LoadBalancerName:    "my-mjs-loadbalancer",
 		InternalClientsOnly: true,
 		MaxWorkers:          10,
+		BasePort:            40000,
 	}
 	zl := zaptest.NewLogger(t)
 	fakeK8s := fake.NewSimpleClientset()
@@ -296,8 +327,7 @@ func TestInternalClientsOnly(t *testing.T) {
 	verifyJobManagerCreated(t, controller)
 
 	// Check the profile was created with the internal hostname of the job manager
-	expectedHost := specFactory.GetServiceHostname(specs.JobManagerHostname)
-	verifyClusterProfileCreated(t, controller, nil, expectedHost, false)
+	verifyClusterProfileCreated(t, controller, nil, specFactory.GetServiceHostname(specs.JobManagerHostname), false)
 
 	// Verify that we can run setup again without erroring
 	// (this can occur if the controller container restarts, and a previous container already created the resources)
@@ -350,6 +380,37 @@ func TestCheckLDAPCert(t *testing.T) {
 	}
 }
 
+// Check we can use a pre-existing metrics certificate for encrypted metrics
+func TestPreExistingMetricsCert(t *testing.T) {
+	conf := config.Config{
+		UseSecureCommunication: false,
+		UseSecureMetrics:       true,
+	}
+	controller, _ := createControllerWithFakeClient(t, &conf)
+	createDummyMetricsCert(t, controller, "")
+	err := controller.setup()
+	require.NoError(t, err, "error setting up controller with pre-existing metrics certificate")
+}
+
+// Check for errors when the metrics certificate does not contain the correct data
+func TestBadMetricsCert(t *testing.T) {
+	toExclude := []string{
+		specs.MetricsCAFileName,
+		specs.MetricsCertFileName,
+		specs.MetricsKeyFileName,
+	}
+	for _, field := range toExclude {
+		conf := config.Config{
+			UseSecureCommunication: false,
+			UseSecureMetrics:       true,
+		}
+		controller, _ := createControllerWithFakeClient(t, &conf)
+		createDummyMetricsCert(t, controller, field)
+		err := controller.setup()
+		assert.Error(t, err, "expected error when metrics certificate secret is missing some data")
+	}
+}
+
 // Verify that a shared secret was added to the K8s cluster
 func verifySharedSecretCreated(t *testing.T, controller *Controller) *certificate.SharedSecret {
 	secret, exists, err := controller.getExistingSharedSecret()
@@ -364,6 +425,51 @@ func verifyNoSecret(t *testing.T, client k8s.Client, name string) {
 	_, exists, err := client.SecretExists(name)
 	require.NoError(t, err)
 	assert.Falsef(t, exists, "secret %s should not exist", name)
+}
+
+// Verify that metrics secrets for the server and client were added to the K8s cluster
+func verifyMetricsSecretsCreated(t *testing.T, controller *Controller, externalHost string) {
+	// Check the server secret
+	secret, exists, err := controller.client.SecretExists(specs.MetricsSecretName)
+	require.NoError(t, err)
+	require.True(t, exists, "metrics secret should exist")
+	require.NotNil(t, secret, "metrics secret should not be nil")
+	require.Contains(t, secret.Data, specs.MetricsCAFileName, "missing data in metrics secret")
+	require.Contains(t, secret.Data, specs.MetricsCertFileName, "missing data in metrics secret")
+	require.Contains(t, secret.Data, specs.MetricsKeyFileName, "missing data in metrics secret")
+
+	// Decode the certificates
+	caCert := decodeCert(t, secret.Data[specs.MetricsCAFileName])
+	serverCert := decodeCert(t, secret.Data[specs.MetricsCertFileName])
+
+	// Check the certificate contents
+	assert.True(t, caCert.IsCA, "expected CA cert")
+	err = serverCert.CheckSignatureFrom(caCert)
+	assert.NoError(t, err, "server certificate should be signed by CA")
+
+	// Check the hostname on the server certificate
+	expectedHost := externalHost
+	if !controller.config.OpenMetricsPortOutsideKubernetes {
+		expectedHost = controller.specFactory.GetServiceHostname(specs.JobManagerHostname)
+	}
+	err = serverCert.VerifyHostname(expectedHost)
+	assert.NoError(t, err, "server certificate should have the expected hostname")
+
+	// There should be a second secret containing certificates for the client to use
+	clientSecret, exists, err := controller.client.SecretExists(clientMetricsCertSecret)
+	require.NoError(t, err)
+	require.True(t, exists, "client metrics secret should exist")
+	require.NotNil(t, secret, "client secret should not be nil")
+	require.Contains(t, clientSecret.Data, specs.MetricsCAFileName, "missing data in client metrics secret")
+	require.Contains(t, clientSecret.Data, clientCertFilename, "missing data in client metrics secret")
+	require.Contains(t, clientSecret.Data, clientKeyFilename, "missing data in client metrics secret")
+
+	// Check the client certificate contents
+	clientCACert := decodeCert(t, clientSecret.Data[specs.MetricsCAFileName])
+	assert.Equal(t, clientCACert, caCert, "client CA certificate should match the server CA certificate")
+	clientCert := decodeCert(t, clientSecret.Data[clientCertFilename])
+	err = clientCert.CheckSignatureFrom(caCert)
+	assert.NoError(t, err, "client certificate should be signed by CA")
 }
 
 // Verify that the job manager was created
@@ -388,7 +494,8 @@ func verifyClusterProfileCreated(t *testing.T, controller *Controller, secret *c
 
 	// Check the profile contents
 	assert.Equal(t, controller.config.JobManagerName, profile.Name, "profile name should match job manager name")
-	assert.Equal(t, expectedHost, profile.SchedulerComponent.Host, "unexpected profile host")
+	expectedHostWithPort := fmt.Sprintf("%s:%d", expectedHost, controller.config.BasePort)
+	assert.Equal(t, expectedHostWithPort, profile.SchedulerComponent.Host, "unexpected profile host")
 	if expectCertInProfile {
 		assert.Equal(t, secret.CertPEM, profile.SchedulerComponent.Certificate, "profile server certificate should match shared secret certificate")
 	} else {
@@ -460,9 +567,31 @@ func createDummyLDAPCert(t *testing.T, controller *Controller) {
 	require.NoError(t, err)
 }
 
+func createDummyMetricsCert(t *testing.T, controller *Controller, fieldToExclude string) {
+	secretSpec := controller.specFactory.GetSecretSpec(specs.MetricsSecretName)
+	secretSpec.Data[specs.MetricsCAFileName] = []byte("my-cert-pem")
+	secretSpec.Data[specs.MetricsCertFileName] = []byte("my-server-pem")
+	secretSpec.Data[specs.MetricsKeyFileName] = []byte("my-key-pem")
+	if fieldToExclude != "" {
+		delete(secretSpec.Data, fieldToExclude)
+	}
+	_, err := controller.client.CreateSecret(secretSpec)
+	require.NoError(t, err)
+}
+
 func addPortToService(svc *corev1.Service, port int) {
 	svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
 		Port:       int32(port),
 		TargetPort: intstr.FromInt(port),
 	})
+}
+
+func decodeCert(t *testing.T, certPEM []byte) *x509.Certificate {
+	block, rest := pem.Decode(certPEM)
+	assert.NotNil(t, block, "failed to decode PEM block")
+	require.Equal(t, block.Type, "CERTIFICATE", "expected certificate PEM block")
+	assert.Empty(t, rest, "expected no remaining data in PEM block")
+	cert, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err)
+	return cert
 }

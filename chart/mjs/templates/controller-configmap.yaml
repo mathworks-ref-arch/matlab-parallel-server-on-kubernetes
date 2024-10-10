@@ -33,6 +33,7 @@ data:
       "ControllerLogfile": {{ include "paths.controllerLog" . | quote }},
       "DeploymentName": {{ include "resources.controller" . | quote}},
       "EnableServiceLinks": {{ include "derived.enableServiceLinks" . }},
+      "OpenMetricsPortOutsideKubernetes": {{ .Values.openMetricsPortOutsideKubernetes }},
       "ExtraWorkerEnvironment": {
       {{- $comma := "" }}
       {{- range $key, $value := .Values.extraWorkerEnv }}
@@ -64,6 +65,7 @@ data:
       "LogPVC": {{ .Values.logPVC | quote }},
       "MatlabPVC": {{ .Values.matlabPVC | default "" | quote }},
       "MatlabRoot": {{ include "paths.matlabroot" . | quote }},
+      "MetricsCertDir": {{ include "paths.metricsCertDir" . | quote }},
       "MaxWorkers": {{ .Values.maxWorkers }},
       "MinWorkers": {{ .Values.minWorkers }},
       "MJSDefConfigMap": {{ include "resources.mjsConfigMap" . | quote }},
@@ -99,6 +101,6 @@ data:
       "WorkerPassword": {{ .Values.workerPassword | quote }},
       "WorkersPerPoolProxy": {{ .Values.workersPerPoolProxy }},
       "WorkerUsername": {{ .Values.workerUsername | quote }},
-      "UsePoolProxy": {{ .Values.usePoolProxy | default true }},
-      "UseSecureCommunication": {{ .Values.useSecureCommunication }}
+      "UseSecureCommunication": {{ .Values.useSecureCommunication }},
+      "UseSecureMetrics": {{ and .Values.exportMetrics .Values.useSecureMetrics }}
     }

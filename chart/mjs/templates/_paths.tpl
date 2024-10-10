@@ -81,3 +81,8 @@ haproxy.cfg
 {{- define "paths.ldapCert" -}}
 /mjs/ldap/cert.pem
 {{- end -}}
+
+# Path to directory containing mounted metrics certificates
+{{- define "paths.metricsCertDir" -}}
+/mjs/metrics/
+{{- end -}}

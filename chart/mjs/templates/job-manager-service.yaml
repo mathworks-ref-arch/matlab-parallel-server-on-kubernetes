@@ -23,3 +23,10 @@ spec:
     port: {{ . }}
     targetPort: {{ . }}
   {{- end }}
+  {{- if .Values.exportMetrics }}
+  - name: {{ printf "metrics-%.0f" .Values.metricsPort }}
+    protocol: TCP
+    appProtocol: TCP
+    port: {{ .Values.metricsPort }}
+    targetPort: {{ .Values.metricsPort }}
+  {{- end }}

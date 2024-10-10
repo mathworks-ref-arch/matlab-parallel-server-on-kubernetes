@@ -34,4 +34,12 @@ spec:
     port: {{ $poolProxyPort }}
     targetPort: {{ $poolProxyPort }}
   {{ end -}}
+  {{- if and .Values.exportMetrics .Values.openMetricsPortOutsideKubernetes }}
+  # Job manager metrics port
+  - name: {{ printf "metrics-%.0f" .Values.metricsPort }}
+    protocol: TCP
+    appProtocol: TCP
+    port: {{ .Values.metricsPort }}
+    targetPort: {{ .Values.metricsPort }}
+  {{- end }}
 {{ end -}}

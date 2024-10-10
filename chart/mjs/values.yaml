@@ -42,6 +42,10 @@ adminUser: "admin" # Username of the cluster administrator
 ldapURL: "" # URL of an LDAP server to authenticate user credentials
 ldapSecurityPrincipalFormat: "" # Format of a security principal (user) for your LDAP server
 ldapSynchronizationIntervalSecs: 1800 # Frequency at which the cluster synchronizes with the LDAP server
+exportMetrics: false # If true, export cluster monitoring metrics from the job manager
+metricsPort: 8001 # Port for exporting metrics
+useSecureMetrics: true # If true, the job manager exports metrics on an encrypted HTTPS server
+openMetricsPortOutsideKubernetes: false # If true, the job manager's metrics server is exposed outside the Kubernetes cluster
 
 # Resource requests and limits
 workerCPULimit: "" # CPU limit for each worker process

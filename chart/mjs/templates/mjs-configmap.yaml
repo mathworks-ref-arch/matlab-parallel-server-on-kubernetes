@@ -29,6 +29,14 @@ data:
     LDAP_SECURITY_PRINCIPAL_FORMAT={{ .Values.ldapSecurityPrincipalFormat | quote }}
     LDAP_SYNCHRONIZATION_INTERVAL_SECS={{ .Values.ldapSynchronizationIntervalSecs | quote }}
     {{- end }}
+    EXPORT_METRICS={{ .Values.exportMetrics }}
+    METRICS_PORT={{ .Values.metricsPort }}
+    USE_SECURE_METRICS={{ .Values.useSecureMetrics }}
+    {{- if .Values.useSecureMetrics }}
+    METRICS_CA_FILE={{ include "paths.metricsCertDir" . }}/ca.crt
+    METRICS_CERT_FILE={{ include "paths.metricsCertDir" . }}/jobmanager.crt
+    METRICS_KEY_FILE={{ include "paths.metricsCertDir" . }}/jobmanager.key
+    {{- end }}
 
   jobManager.sh: |
     # Script to run on the MATLAB Job Scheduler job manager pod

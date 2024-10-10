@@ -1,0 +1,309 @@
+{
+    "$schema": "https://json-schema.org/draft-07/schema#",
+    "properties": {
+        "additionalMatlabPVCs": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "adminUser": {
+            "type": "string"
+        },
+        "autoCreateLoadBalancer": {
+            "type": "boolean"
+        },
+        "autoScalingPeriod": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "basePort": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65535
+        },
+        "checkpointPVC": {
+            "type": "string"
+        },
+        "clusterHost": {
+            "type": "string"
+        },
+        "controllerImage": {
+            "type": "string"
+        },
+        "controllerImagePullPolicy": {
+            "type": "string",
+            "enum": ["Always", "Never", "IfNotPresent"]
+        },
+        "controllerImageTag": {
+            "type": "string"
+        },
+        "enableServiceLinks": {
+            "type": "boolean"
+        },
+        "exportMetrics": {
+            "type": "boolean"
+        },
+        "extraWorkerEnv": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
+        "haproxyImage": {
+            "type": "string"
+        },
+        "haproxyImagePullPolicy": {
+            "type": "string",
+            "enum": ["Always", "Never", "IfNotPresent"]
+        },
+        "idleStop": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "internalClientsOnly": {
+            "type": "boolean"
+        },
+        "jobManagerCPULimit": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "jobManagerCPURequest": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "jobManagerGroupID": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "jobManagerImage": {
+            "type": "string"
+        },
+        "jobManagerImagePullPolicy": {
+            "type": "string",
+            "enum": ["Always", "Never", "IfNotPresent"]
+        },
+        "jobManagerImageTag": {
+            "type": "string"
+        },
+        "jobManagerMemoryLimit": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "jobManagerMemoryRequest": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "jobManagerName": {
+            "type": "string"
+        },
+        "jobManagerUserID": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "jobManagerUsesPVC": {
+            "type": "boolean"
+        },
+        "ldapSecurityPrincipalFormat": {
+            "type": "string"
+        },
+        "ldapSynchronizationIntervalSecs": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "ldapURL": {
+            "type": "string"
+        },
+        "livenessProbeFailureThreshold": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "livenessProbePeriod": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "livenessProbeTimeout": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "logLevel": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 6
+        },
+        "logPVC": {
+            "type": "string"
+        },
+        "matlabDepsImage": {
+            "type": "string"
+        },
+        "matlabImage": {
+            "type": "string"
+        },
+        "matlabImagePullPolicy": {
+            "type": "string",
+            "enum": ["Always", "Never", "IfNotPresent"]
+        },
+        "matlabImageTag": {
+            "type": "string"
+        },
+        "matlabPVC": {
+            "type": "string"
+        },
+        "matlabRelease": {
+            "type": "string",
+            "enum": ["r2024a", "r2024b"]
+        },
+        "maxWorkers": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "metricsPort": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65535
+        },
+        "minWorkers": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "networkLicenseManager": {
+            "type": "string"
+        },
+        "openMetricsPortOutsideKubernetes": {
+            "type": "boolean"
+        },
+        "poolProxyBasePort": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65535
+        },
+        "poolProxyCPULimit": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "poolProxyCPURequest": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "poolProxyImage": {
+            "type": "string"
+        },
+        "poolProxyImagePullPolicy": {
+            "type": "string",
+            "enum": ["Always", "Never", "IfNotPresent"]
+        },
+        "poolProxyImageTag": {
+            "type": "string"
+        },
+        "poolProxyMemoryLimit": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "poolProxyMemoryRequest": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "requireClientCertificate": {
+            "type": "boolean"
+        },
+        "requireScriptVerification": {
+            "type": "boolean"
+        },
+        "securityLevel": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2
+        }, 
+        "startupProbeFailureThreshold": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "startupProbeInitialDelay": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "startupProbePeriod": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "stopWorkerGracePeriod": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "useOnlineLicensing": {
+            "type": "boolean"
+        },
+        "useSecureCommunication": {
+            "type": "boolean"
+        },
+        "useSecureMetrics": {
+            "type": "boolean"
+        },
+        "workerCPULimit": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "workerCPURequest": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "workerLogPVC": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "workerMemoryLimit": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "workerMemoryRequest": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "workerPassword": {
+            "type": "string"
+        },
+        "workersPerPoolProxy": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "workerUsername": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "maxWorkers",
+        "checkpointPVC",
+        "logPVC",
+        "workerLogPVC"
+    ],
+    "title": "Values",
+    "type": "object",
+    "additionalProperties": false
+}

@@ -27,6 +27,11 @@ data:
         default_backend back-mjs-job-manager
     backend back-mjs-job-manager
         server mjs-job-manager mjs-job-manager
+    {{- if and .Values.exportMetrics .Values.openMetricsPortOutsideKubernetes }}
+    frontend front-jobmanager-metrics
+        bind {{ printf "*:%d" (.Values.metricsPort | int) }}
+        default_backend back-mjs-job-manager
+    {{- end }}
 
     # Rules for proxying traffic to the parallel pool proxies.
     # Each parallel pool proxy has a unique port, which should be mapped to the

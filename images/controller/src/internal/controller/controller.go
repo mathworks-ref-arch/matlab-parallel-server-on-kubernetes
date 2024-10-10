@@ -16,6 +16,7 @@ import (
 	"github.com/mathworks/mjssetup/pkg/certificate"
 	"github.com/mathworks/mjssetup/pkg/profile"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // Controller sets up and periodically rescales a cluster
@@ -101,6 +102,12 @@ func (c *Controller) setup() error {
 	sharedSecret, err := c.createMJSSecrets()
 	if err != nil {
 		return err
+	}
+	if c.config.UseSecureMetrics {
+		err = c.createCertsForMetrics()
+		if err != nil {
+			return err
+		}
 	}
 	err = c.createJobManager()
 	if err != nil {
@@ -227,7 +234,7 @@ func (c *Controller) checkLDAPSecret() error {
 
 	// Check that the secret contains the expected filename
 	if _, ok := secret.Data[certFile]; !ok {
-		return fmt.Errorf(`error: LDAP certificate secret "%s" does not contain the file "%s". %s`, specs.AdminPasswordSecretName, certFile, createSecretInstruction)
+		return fmt.Errorf(`error: LDAP certificate secret "%s" does not contain the file "%s". %s`, ldapSecretName, certFile, createSecretInstruction)
 	}
 	return nil
 }
@@ -291,6 +298,67 @@ func (c *Controller) createSharedSecret() (*certificate.SharedSecret, error) {
 	return secret, nil
 }
 
+const (
+	clientMetricsCertSecret = "mjs-metrics-client-certs"
+	clientCertFilename      = "prometheus.crt"
+	clientKeyFilename       = "prometheus.key"
+)
+
+// Create a secret containing certificates for a secure metrics server
+func (c *Controller) createCertsForMetrics() error {
+	secret, alreadyExists, err := c.client.SecretExists(specs.MetricsSecretName)
+	if err != nil {
+		return fmt.Errorf("error checking for metrics secret: %v", err)
+	}
+	if alreadyExists {
+		c.logger.Info("using existing metrics secret")
+		return c.checkMetricsSecret(secret)
+	}
+
+	// Create a CA cert
+	certCreator := certificate.New()
+	caCert, err := certCreator.CreateSharedSecret()
+	if err != nil {
+		return err
+	}
+
+	// Create secret containing certificates for the metrics server
+	jmHost, err := c.getJobManagerHost(!c.config.OpenMetricsPortOutsideKubernetes)
+	c.logger.Info("generating metrics server certificates", zap.String("host", jmHost))
+	if err != nil {
+		return err
+	}
+	serverCert, err := certCreator.GenerateCertificateWithHostname(caCert, jmHost)
+	if err != nil {
+		return err
+	}
+	secretSpec := c.specFactory.GetSecretSpec(specs.MetricsSecretName)
+	secretSpec.Data[specs.MetricsCAFileName] = []byte(serverCert.ServerCert)
+	secretSpec.Data[specs.MetricsCertFileName] = []byte(serverCert.ClientCert)
+	secretSpec.Data[specs.MetricsKeyFileName] = []byte(serverCert.ClientKey)
+	_, err = c.client.CreateSecret(secretSpec)
+	if err != nil {
+		return fmt.Errorf("error creating Kubernetes secret for metrics certificates: %v", err)
+	}
+	c.logger.Info("created metrics secret for job manager", zap.String("name", secretSpec.Name))
+
+	// Create another secret containing certificates for the client to use
+	clientCert, err := certCreator.GenerateCertificate(caCert)
+	if err != nil {
+		return err
+	}
+	clientSecretSpec := c.specFactory.GetSecretSpec(clientMetricsCertSecret)
+	clientSecretSpec.Data[specs.MetricsCAFileName] = []byte(clientCert.ServerCert)
+	clientSecretSpec.Data[clientCertFilename] = []byte(clientCert.ClientCert)
+	clientSecretSpec.Data[clientKeyFilename] = []byte(clientCert.ClientKey)
+	_, err = c.client.CreateSecret(clientSecretSpec)
+	if err != nil {
+		return fmt.Errorf("error creating Kubernetes secret for client certificates for metrics server: %v", err)
+	}
+	c.logger.Info("created metrics secret for client", zap.String("name", clientSecretSpec.Name))
+	return nil
+}
+
 // Create a deployment for the MJS job manager; return when the pod is ready
 func (c *Controller) createJobManager() error {
 	// Check whether the deployment already exists; this can occur if the controller container has restarted
@@ -339,20 +407,11 @@ func (c *Controller) createProfile(sharedSecret *certificate.SharedSecret) error
 	}
 
 	// Get MJS hostname
-	var clusterHost = c.config.ClusterHost
-	if clusterHost == "" {
-		if c.config.InternalClientsOnly {
-			// Use the job manager hostname if all clients are inside the Kubernetes cluster
-			clusterHost = c.specFactory.GetServiceHostname(specs.JobManagerHostname)
-		} else {
-			// Extract the hostname from the load balancer
-			var err error
-			clusterHost, err = c.getExternalAddress()
-			if err != nil {
-				return err
-			}
-		}
+	clusterHost, err := c.getJobManagerHost(c.config.InternalClientsOnly)
+	if err != nil {
+		return err
 	}
+	clusterHost = fmt.Sprintf("%s:%d", clusterHost, c.config.BasePort)
 
 	// Generate a certificate for the client if needed
 	var cert *certificate.Certificate
@@ -405,9 +464,6 @@ func (c *Controller) getExternalAddress() (string, error) {
 		time.Sleep(retryPeriod)
 	}
 	c.logger.Info("found LoadBalancer external hostname", zap.String("hostname", address))
-
-	// Append the base port
-	address = fmt.Sprintf("%s:%d", address, c.config.BasePort)
 	return address, nil
 }
 
@@ -445,6 +501,40 @@ func waitForJobManager(client k8s.Client, retryPeriodSeconds int32) error {
 			break
 		}
 		time.Sleep(retryPeriod)
+	}
+	return nil
+}
+
+// Get the job manager hostname
+func (c *Controller) getJobManagerHost(internalOnly bool) (string, error) {
+	if internalOnly {
+		// Use the job manager hostname if all clients are inside the Kubernetes cluster
+		return c.specFactory.GetServiceHostname(specs.JobManagerHostname), nil
+	}
+
+	// Use a custom hostname if one was set
+	if c.config.ClusterHost != "" {
+		return c.config.ClusterHost, nil
+	}
+
+	// Otherwise, get the hostname from the load balancer
+	return c.getExternalAddress()
+}
+
+// Check the contents of an existing metrics certificate secret
+func (c *Controller) checkMetricsSecret(secret *corev1.Secret) error {
+	createSecretInstruction := fmt.Sprintf(`To start an MJS with a server exporting encrypted metrics, create a secret with command "kubectl create secret generic %s --from-file=%s=<ca-cert> --from-file=%s=<server-cert> --from-file=%s=<server-key> --namespace %s", replacing "<ca-cert>" with the path to the CA certificate used to sign your client certificate, <server-cert> with the path to the SSL certificate to use for the server, and <server-key> with the path to the private key file to use for the server.`, specs.MetricsSecretName, specs.MetricsCAFileName, specs.MetricsCertFileName, specs.MetricsKeyFileName, c.config.Namespace)
+
+	// Check that the secret contains the expected filenames
+	toCheck := []string{
+		specs.MetricsCAFileName,
+		specs.MetricsCertFileName,
+		specs.MetricsKeyFileName,
+	}
+	for _, key := range toCheck {
+		if _, ok := secret.Data[key]; !ok {
+			return fmt.Errorf(`error: metrics certificate secret "%s" does not contain the file "%s". %s`, specs.MetricsSecretName, key, createSecretInstruction)
+		}
 	}
 	return nil
 }

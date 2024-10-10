@@ -1,10 +1,10 @@
 module controller
 
-go 1.22.4
+go 1.23
 
 require (
 	github.com/google/uuid v1.3.0
-	github.com/mathworks/mjssetup v1.0.0
+	github.com/mathworks/mjssetup v1.2.0
 	github.com/stretchr/testify v1.8.4
 	k8s.io/api v0.29.2
 	k8s.io/apimachinery v0.29.2

@@ -26,13 +26,14 @@ type SpecFactory struct {
 
 // Volume names
 const (
-	matlabVolumeName     = "matlab-volume"
-	logVolumeName        = "log-volume"
-	secretVolumeName     = "secret-volume"
-	mjsDefVolumeName     = "mjs-volume"
-	checkpointVolumeName = "checkpoint-volume"
-	proxyCertVolumeName  = "proxy-cert-volume"
-	ldapCertVolumeName   = "ldap-cert-volume"
+	matlabVolumeName      = "matlab-volume"
+	logVolumeName         = "log-volume"
+	secretVolumeName      = "secret-volume"
+	mjsDefVolumeName      = "mjs-volume"
+	checkpointVolumeName  = "checkpoint-volume"
+	proxyCertVolumeName   = "proxy-cert-volume"
+	ldapCertVolumeName    = "ldap-cert-volume"
+	metricsCertVolumeName = "metrics-cert-volume"
 )
 
 // Secret names
@@ -41,6 +42,7 @@ const (
 	AdminPasswordSecretName = "mjs-admin-password"
 	AdminPasswordKey        = "password"
 	LDAPSecretName          = "mjs-ldap-secret"
+	MetricsSecretName       = "mjs-metrics-secret"
 )
 
 // File names
@@ -48,6 +50,9 @@ const (
 	ProxyCertFileName   = "certificate.json"
 	proxyCertDir        = "/proxy-cert"
 	additionalMatlabDir = "/opt/additionalmatlab"
+	MetricsCAFileName   = "ca.crt"
+	MetricsCertFileName = "jobmanager.crt"
+	MetricsKeyFileName  = "jobmanager.key"
 )
 
 // NewSpecFactory constructs a SpecFactory
@@ -348,6 +353,9 @@ func (s *SpecFactory) GetJobManagerDeploymentSpec() *appsv1.Deployment {
 	}
 	if s.config.LDAPCertPath != "" {
 		addVolumeFromSecret(&pod, LDAPSecretName, ldapCertVolumeName, s.config.LDAPCertDir(), true)
+	}
+	if s.config.UseSecureMetrics {
+		addVolumeFromSecret(&pod, MetricsSecretName, metricsCertVolumeName, s.config.MetricsCertDir, true)
 	}
 
 	// Ensure this pod can resolve itself via its service name without having to use the Kubernetes service; this ensures it can resolve its own MJS service even if the Kubernetes service does not map to this pod
