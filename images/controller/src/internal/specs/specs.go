@@ -145,6 +145,7 @@ func (s *SpecFactory) GetWorkerDeploymentSpec(w *WorkerInfo) *appsv1.Deployment 
 		},
 	}
 	s.setEnableServiceLinks(&pod)
+	pod.NodeSelector = s.config.WorkerNodeSelector
 
 	// Add volumes
 	addVolumeFromConfigMap(&pod, s.config.MJSDefConfigMap, mjsDefVolumeName, s.config.MJSDefDir)
@@ -161,6 +162,11 @@ func (s *SpecFactory) GetWorkerDeploymentSpec(w *WorkerInfo) *appsv1.Deployment 
 		addVolumeFromSecret(&pod, proxy.Name, proxyCertVolumeName, proxyCertDir, false)
 	}
 	s.addAdditionalMatlabPVCs(&pod)
+
+	if s.config.OverrideWorkergroupConfig {
+		configPath := filepath.Join(s.config.MatlabRoot, "toolbox", "parallel", "config", "workergroup.config")
+		addVolumeFromConfigMapFile(&pod, "mjs-worker-config", "worker-config-volume", "workergroup.config", configPath)
+	}
 
 	return s.wrapPod(&pod, w.HostName, getLabelsForWorker(w))
 }
@@ -234,6 +240,7 @@ func (s *SpecFactory) GetPoolProxyDeploymentSpec(proxy *PoolProxyInfo) *appsv1.D
 		TerminationGracePeriodSeconds: &proxyGracePeriod,
 	}
 	s.setEnableServiceLinks(&pod)
+	pod.NodeSelector = s.config.WorkerNodeSelector
 
 	// Add volumes
 	if s.config.MatlabPVC != "" {
@@ -336,10 +343,11 @@ func (s *SpecFactory) GetJobManagerDeploymentSpec() *appsv1.Deployment {
 		},
 	}
 	s.setEnableServiceLinks(&pod)
+	pod.NodeSelector = s.config.JobManagerNodeSelector
 
 	// Add volumes
 	addVolumeFromConfigMap(&pod, s.config.MJSDefConfigMap, mjsDefVolumeName, s.config.MJSDefDir)
-	if s.config.MatlabPVC != "" {
+	if s.config.MatlabPVC != "" && s.config.JobManagerUsesPVC {
 		addVolumeFromPVC(&pod, s.config.MatlabPVC, matlabVolumeName, s.config.MatlabRoot, true)
 	}
 	if s.config.LogPVC != "" {
@@ -367,15 +375,19 @@ func (s *SpecFactory) GetJobManagerDeploymentSpec() *appsv1.Deployment {
 	return s.wrapPod(&pod, JobManagerHostname, s.getLabelsForJobManager())
 }
 
-// GetSecretSpec creates a spec for an empty Kubernetes secret
-func (s *SpecFactory) GetSecretSpec(name string) *corev1.Secret {
-	return &corev1.Secret{
+// GetSecretSpec creates a spec for an empty Kubernetes secret.
+// If preserve=true, the secret will not be deleted when the controller is deleted.
+func (s *SpecFactory) GetSecretSpec(name string, preserve bool) *corev1.Secret {
+	secret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            name,
-			OwnerReferences: s.ownerRefs,
+			Name: name,
 		},
 		Data: map[string][]byte{},
 	}
+	if !preserve {
+		secret.ObjectMeta.OwnerReferences = s.ownerRefs
+	}
+	return &secret
 }
 
 // CalculateWorkerPorts returns the min and max port to use for parpools on worker pods
@@ -643,5 +655,32 @@ func (s *SpecFactory) addAdditionalMatlabPVCs(pod *corev1.PodSpec) {
 	}
 	addEnv(&pod.Containers[0], map[string]string{
 		"MJS_ADDITIONAL_MATLABROOTS": strings.Join(additionalMATLABRoots, ":"),
+	})
+}
+
+// addVolumeFromConfigMapFile adds a volume mounted from a ConfigMap file to a single file on the pod
+func addVolumeFromConfigMapFile(pod *corev1.PodSpec, configMapName, volumeName, fileName, mountPath string) {
+	source := corev1.VolumeSource{
+		ConfigMap: &corev1.ConfigMapVolumeSource{
+			LocalObjectReference: corev1.LocalObjectReference{
+				Name: configMapName,
+			},
+			Items: []corev1.KeyToPath{
+				{
+					Key:  fileName,
+					Path: fileName,
+				},
+			},
+		},
+	}
+	pod.Containers[0].VolumeMounts = append(pod.Containers[0].VolumeMounts, corev1.VolumeMount{
+		Name:      volumeName,
+		MountPath: mountPath,
+		SubPath:   fileName,
+		ReadOnly:  true,
+	})
+	pod.Volumes = append(pod.Volumes, corev1.Volume{
+		Name:         volumeName,
+		VolumeSource: source,
 	})
 }

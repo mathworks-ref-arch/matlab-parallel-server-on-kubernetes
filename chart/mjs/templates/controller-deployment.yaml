@@ -22,6 +22,9 @@ spec:
       # If set to false, disable creation of environment variables for services
       enableServiceLinks: {{ include "derived.enableServiceLinks" . }}
 
+      # Schedule on same nodes as the job manager
+      nodeSelector: {{ toJson .Values.jobManagerNodeSelector }}
+
       containers:
       - name: {{ $name }}
         image: {{ printf "%s:%s" .Values.controllerImage $controllerImageTag }}

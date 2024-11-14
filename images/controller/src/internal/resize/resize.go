@@ -271,7 +271,7 @@ func (m *MJSResizer) createProxyCertificate(name string) error {
 	if err != nil {
 		return fmt.Errorf("error marshaling certificate: %v", err)
 	}
-	secretSpec := m.specFactory.GetSecretSpec(name)
+	secretSpec := m.specFactory.GetSecretSpec(name, false)
 	secretSpec.Data[specs.ProxyCertFileName] = certBytes
 
 	// Create the Kubernetes secret

@@ -1,0 +1,11 @@
+{{- if eq (include "derived.overrideWorkergroupConfig" .) "true" -}}
+# Config files for the MJS workers.
+# Copyright 2024 The MathWorks, Inc.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mjs-worker-config
+data:
+  workergroup.config: |
+    {{- .Files.Get "files/workergroup.config" | nindent 4 }}
+{{- end -}}

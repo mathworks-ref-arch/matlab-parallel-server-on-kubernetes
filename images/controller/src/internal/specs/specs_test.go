@@ -34,6 +34,7 @@ func TestGetWorkerDeploymentSpec(t *testing.T) {
 			conf := createTestConfig()
 			conf.InternalClientsOnly = !tc.usePoolProxy
 			conf.UseSecureCommunication = tc.useSecureCommunication
+			conf.WorkerNodeSelector = map[string]string{"node-type": "worker"}
 
 			// Create a SpecFactory
 			specFactory := NewSpecFactory(conf, ownerUID)
@@ -140,9 +141,11 @@ func TestGetJobManagerSpecs(t *testing.T) {
 	testCases := []struct {
 		name                   string
 		useSecureCommunication bool
+		useMatlabPVC           bool
 	}{
-		{"insecure", false},
-		{"secure_communication", true},
+		{"insecure", false, false},
+		{"secure_communication", true, false},
+		{"with_matlab_pvc", false, true},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(tt *testing.T) {
@@ -150,6 +153,8 @@ func TestGetJobManagerSpecs(t *testing.T) {
 			conf := createTestConfig()
 			conf.UseSecureCommunication = tc.useSecureCommunication
 			conf.JobManagerUID = "jm123"
+			conf.JobManagerUsesPVC = tc.useMatlabPVC
+			conf.JobManagerNodeSelector = map[string]string{"node-type": "jobmanager"}
 
 			// Create a SpecFactory
 			specFactory := NewSpecFactory(conf, ownerUID)
@@ -293,6 +298,35 @@ func TestMountMetricsSecret(t *testing.T) {
 	}
 }
 
+func TestGetSecretSpec(t *testing.T) {
+	ownerUID := types.UID("abcd1234")
+	testCases := []struct {
+		name            string
+		preserveSecrets bool
+	}{
+		{"preserve_secrets", true},
+		{"no_preserve_secrets", false},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(tt *testing.T) {
+			conf := createTestConfig()
+			conf.PreserveSecrets = tc.preserveSecrets
+			specFactory := NewSpecFactory(conf, ownerUID)
+
+			secretName := "my-secret"
+			secret := specFactory.GetSecretSpec(secretName, tc.preserveSecrets)
+			require.NotNil(tt, secret, "Secret should not be nil")
+			assert.Equal(tt, secret.ObjectMeta.Name, secretName, "Unexpected secret name")
+
+			if tc.preserveSecrets {
+				assert.Empty(tt, secret.ObjectMeta.OwnerReferences, "Secret should not have owner reference when preserve=true")
+			} else {
+				assert.Equal(tt, secret.ObjectMeta.OwnerReferences[0].UID, ownerUID, "Secret should have owner reference when preserve=false")
+			}
+		})
+	}
+}
+
 func verifyWorkerSpecs(t *testing.T, specFactory *SpecFactory, conf *config.Config, ownerUID types.UID) {
 	assert := assert.New(t)
 	testWorker := &WorkerInfo{
@@ -337,6 +371,7 @@ func verifyWorkerSpecs(t *testing.T, specFactory *SpecFactory, conf *config.Conf
 	} else {
 		verifyPodDoesNotHaveVolume(t, &pod, proxyCertVolumeName)
 	}
+	verifyPodHasVolume(t, &pod, matlabVolumeName)
 
 	// Check environment
 	verifyEnvVar(t, &pod, "MLM_LICENSE_FILE", conf.NetworkLicenseManager)
@@ -375,6 +410,9 @@ func verifyWorkerSpecs(t *testing.T, specFactory *SpecFactory, conf *config.Conf
 		expectedHostname := specFactory.GetServiceHostname(testWorker.HostName)
 		verifyEnvVar(t, &pod, "MDCE_OVERRIDE_EXTERNAL_HOSTNAME", expectedHostname)
 	}
+
+	// Check node selector
+	assert.Equal(pod.NodeSelector, conf.WorkerNodeSelector, "Worker pod node selector should match config")
 
 	// Create a service spec for the same worker
 	svc := specFactory.GetWorkerServiceSpec(testWorker)
@@ -433,6 +471,9 @@ func verifyProxySpecs(t *testing.T, specFactory *SpecFactory, conf *config.Confi
 	} else {
 		verifyPodDoesNotHaveVolume(t, &pod, proxyCertVolumeName)
 	}
+
+	// Check node selector
+	assert.Equal(pod.NodeSelector, conf.WorkerNodeSelector, "Proxy pod should match the worker node selector")
 }
 
 func verifyJobManagerSpec(t *testing.T, specFactory *SpecFactory, conf *config.Config, ownerUID types.UID) {
@@ -469,12 +510,21 @@ func verifyJobManagerSpec(t *testing.T, specFactory *SpecFactory, conf *config.C
 	// Check volumes
 	verifyPodHasVolume(t, &pod, mjsDefVolumeName)
 	verifyPodHasVolume(t, &pod, checkpointVolumeName)
-	verifyPodHasVolume(t, &pod, matlabVolumeName)
 	if conf.UseSecureCommunication {
 		verifyPodHasVolume(t, &pod, secretVolumeName)
 	} else {
 		verifyPodDoesNotHaveVolume(t, &pod, secretVolumeName)
 	}
+
+	// MATLAB volume should only be mounted if JobManagerUsesPVC=true
+	if conf.JobManagerUsesPVC {
+		verifyPodHasVolume(t, &pod, matlabVolumeName)
+	} else {
+		verifyPodDoesNotHaveVolume(t, &pod, matlabVolumeName)
+	}
+
+	// Check node selector
+	assert.Equal(pod.NodeSelector, conf.JobManagerNodeSelector, "Job manager pod should match the job manager node selector")
 }
 
 // Verify common properties of all created deployment specs
@@ -488,7 +538,6 @@ func verifyDeployment(t *testing.T, deployment *appsv1.Deployment, ownerUID type
 
 	// Verify volumes common to all pods
 	pod := deployment.Spec.Template.Spec
-	verifyPodHasVolume(t, &pod, matlabVolumeName)
 	verifyPodHasVolume(t, &pod, logVolumeName)
 }
 

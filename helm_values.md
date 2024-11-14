@@ -30,6 +30,7 @@ If you do not include a parameter in your YAML file, your configuration uses the
 `jobManagerMemoryLimit`               | Memory limit for the job manager pod. | &mdash;
 `jobManagerMemoryRequest`             | Memory request for the job manager pod. | `4Gi`
 `jobManagerName`                      | Name of the MATLAB Job Scheduler job manager. | `MJS_Kubernetes`
+`jobManagerNodeSelector`              | Node selector for the job manager pod, specified as key-value pairs that match the labels of the Kubernetes nodes you want to run the job manager on. For example, to run the job manager on nodes with label `node-type=jobmanager`, set this parameter to `{"node-type":"jobmanager"}`. You must assign the appropriate labels to your nodes before you can use the `nodeSelector` feature. For more information, see [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node) on the Kubernetes website. | `{}`
 `jobManagerUserID`                    | User ID of the user account that MATLAB Job Scheduler uses to run the job manager pod. The user must have write permission for the checkpoint and log PersistentVolumes. To find the user ID, on a Linux machine, run `id -u` in the terminal. | `0`
 `jobManagerUsesPVC`                   | Flag to mount a MATLAB Parallel Server installation from a PersistentVolume onto the job manager pod if the `matlabPVC` parameter is set. If this flag is set to true, the job manager pod uses the image specified in the `matlabDepsImage` parameter. | `false`
 `ldapSecurityPrincipalFormat`         | Format of a security principal (user) for your LDAP server. | &mdash;
@@ -68,6 +69,7 @@ If you do not include a parameter in your YAML file, your configuration uses the
 `workerLogPVC`                        | Name of the PersistentVolumeClaim that is bound to the PersistentVolume used to retain worker logs. | &mdash;
 `workerMemoryLimit`                   | Memory limit for each worker pod. | `8Gi`
 `workerMemoryRequest`                 | Memory request for each worker pod. | `8Gi`
+`workerNodeSelector`                  | Node selector for the worker pods, specified as key-value pairs that match the labels of the Kubernetes nodes you want to run the workers on. For example, to run the workers on nodes with label `node-type=worker`, set this parameter to `{"node-type":"worker"}`. You must assign the appropriate labels to your nodes before you can use the `nodeSelector` feature. For more information, see [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node) on the Kubernetes website. | `{}`
 `workerPassword`                      | Password of the username that MATLAB Parallel Server uses to run jobs. | `matlab`
 `workerUsername`                      | Username that MATLAB Parallel Server uses to run jobs. | `matlab`
 `workersPerPoolProxy`                 | Maximum number of workers using each parallel pool proxy. | `32`

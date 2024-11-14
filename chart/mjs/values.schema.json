@@ -105,6 +105,12 @@
         "jobManagerName": {
             "type": "string"
         },
+        "jobManagerNodeSelector": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
         "jobManagerUserID": {
             "type": "integer",
             "minimum": 0
@@ -179,6 +185,9 @@
             "type": "string"
         },
         "openMetricsPortOutsideKubernetes": {
+            "type": "boolean"
+        },
+        "preserveSecrets": {
             "type": "boolean"
         },
         "poolProxyBasePort": {
@@ -285,6 +294,12 @@
             { "type": "string" },
             { "type": "number" }
             ]
+        },
+        "workerNodeSelector": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
         },
         "workerPassword": {
             "type": "string"

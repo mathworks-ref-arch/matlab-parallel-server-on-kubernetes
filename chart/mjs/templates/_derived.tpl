@@ -25,3 +25,8 @@
 {{- define "derived.addLDAPCert" -}}
 {{ and (hasPrefix "ldaps://" .Values.ldapURL) (or (empty .Values.matlabPVC) (not .Values.jobManagerUsesPVC)) }}
 {{- end -}}
+
+# Whether to override the workergroup config file
+{{- define "derived.overrideWorkergroupConfig" -}}
+{{ and (eq .Values.matlabRelease "r2024b") (not (empty .Values.networkLicenseManager)) }}
+{{- end -}}

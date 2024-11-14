@@ -274,7 +274,7 @@ func (c *Controller) createSharedSecret() (*certificate.SharedSecret, error) {
 	}
 
 	// Get spec for Kubernetes secret
-	secretSpec := c.specFactory.GetSecretSpec(specs.SharedSecretName)
+	secretSpec := c.specFactory.GetSecretSpec(specs.SharedSecretName, c.config.PreserveSecrets)
 	secretSpec.Data[c.config.SecretFileName] = secretBytes
 
 	// Generate a certificate if needed
@@ -332,7 +332,7 @@ func (c *Controller) createCertsForMetrics() error {
 	if err != nil {
 		return err
 	}
-	secretSpec := c.specFactory.GetSecretSpec(specs.MetricsSecretName)
+	secretSpec := c.specFactory.GetSecretSpec(specs.MetricsSecretName, c.config.PreserveSecrets)
 	secretSpec.Data[specs.MetricsCAFileName] = []byte(serverCert.ServerCert)
 	secretSpec.Data[specs.MetricsCertFileName] = []byte(serverCert.ClientCert)
 	secretSpec.Data[specs.MetricsKeyFileName] = []byte(serverCert.ClientKey)
@@ -347,7 +347,7 @@ func (c *Controller) createCertsForMetrics() error {
 	if err != nil {
 		return err
 	}
-	clientSecretSpec := c.specFactory.GetSecretSpec(clientMetricsCertSecret)
+	clientSecretSpec := c.specFactory.GetSecretSpec(clientMetricsCertSecret, c.config.PreserveSecrets)
 	clientSecretSpec.Data[specs.MetricsCAFileName] = []byte(clientCert.ServerCert)
 	clientSecretSpec.Data[clientCertFilename] = []byte(clientCert.ClientCert)
 	clientSecretSpec.Data[clientKeyFilename] = []byte(clientCert.ClientKey)
@@ -430,7 +430,7 @@ func (c *Controller) createProfile(sharedSecret *certificate.SharedSecret) error
 	}
 
 	// Create Kubernetes secret for profile
-	secret := c.specFactory.GetSecretSpec(profileSecretName)
+	secret := c.specFactory.GetSecretSpec(profileSecretName, c.config.PreserveSecrets)
 	secret.Data[profileKey] = profBytes
 	_, err = c.client.CreateSecret(secret)
 	if err != nil {

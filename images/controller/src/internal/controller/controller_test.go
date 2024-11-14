@@ -554,21 +554,21 @@ func createControllerWithFakeClient(t *testing.T, conf *config.Config) (*Control
 }
 
 func createDummyAdminPassword(t *testing.T, controller *Controller) {
-	secretSpec := controller.specFactory.GetSecretSpec(specs.AdminPasswordSecretName)
+	secretSpec := controller.specFactory.GetSecretSpec(specs.AdminPasswordSecretName, false)
 	secretSpec.Data[specs.AdminPasswordKey] = []byte("testpw")
 	_, err := controller.client.CreateSecret(secretSpec)
 	require.NoError(t, err)
 }
 
 func createDummyLDAPCert(t *testing.T, controller *Controller) {
-	secretSpec := controller.specFactory.GetSecretSpec(specs.LDAPSecretName)
+	secretSpec := controller.specFactory.GetSecretSpec(specs.LDAPSecretName, false)
 	secretSpec.Data[controller.config.LDAPCertFile()] = []byte("my-cert-pem")
 	_, err := controller.client.CreateSecret(secretSpec)
 	require.NoError(t, err)
 }
 
 func createDummyMetricsCert(t *testing.T, controller *Controller, fieldToExclude string) {
-	secretSpec := controller.specFactory.GetSecretSpec(specs.MetricsSecretName)
+	secretSpec := controller.specFactory.GetSecretSpec(specs.MetricsSecretName, false)
 	secretSpec.Data[specs.MetricsCAFileName] = []byte("my-cert-pem")
 	secretSpec.Data[specs.MetricsCertFileName] = []byte("my-server-pem")
 	secretSpec.Data[specs.MetricsKeyFileName] = []byte("my-key-pem")

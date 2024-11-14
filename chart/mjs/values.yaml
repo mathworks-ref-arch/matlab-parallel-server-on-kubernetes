@@ -61,6 +61,10 @@ poolProxyCPURequest: "0.5" # CPU request for each parallel pool proxy process
 poolProxyMemoryLimit: "" # Memory limit for each parallel pool proxy process
 poolProxyMemoryRequest: "500Mi" # Memory request for each parallel pool proxy process
 
+# Node settings
+jobManagerNodeSelector: {} # Node selector for the job manager, specified as key-value pairs
+workerNodeSelector: {} # Node selector for the workers, specified as key-value pairs
+
 # Auto-scaling settings
 idleStop: 300 # Time after which idle worker pods will be removed
 autoScalingPeriod: 15 # Period with which the controller checks the cluster's size requirements

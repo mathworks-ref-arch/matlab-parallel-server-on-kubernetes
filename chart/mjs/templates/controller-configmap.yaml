@@ -34,13 +34,7 @@ data:
       "DeploymentName": {{ include "resources.controller" . | quote}},
       "EnableServiceLinks": {{ include "derived.enableServiceLinks" . }},
       "OpenMetricsPortOutsideKubernetes": {{ .Values.openMetricsPortOutsideKubernetes }},
-      "ExtraWorkerEnvironment": {
-      {{- $comma := "" }}
-      {{- range $key, $value := .Values.extraWorkerEnv }}
-        {{ $comma }}{{ $key | quote }}: {{ $value | quote }}
-        {{- $comma = "," }}
-      {{- end }}
-      },
+      "ExtraWorkerEnvironment": {{ toJson (.Values.extraWorkerEnv | default dict) }},
       "IdleStop": {{ .Values.idleStop }},
       "InternalClientsOnly": {{ .Values.internalClientsOnly }},
       "JobManagerImage": {{ printf "%s:%s" $jobManagerImage $jobManagerImageTag | quote }},
@@ -51,9 +45,11 @@ data:
       "JobManagerMemoryLimit": {{ .Values.jobManagerMemoryLimit | quote }},
       "JobManagerMemoryRequest": {{ .Values.jobManagerMemoryRequest | quote }},
       "JobManagerGroupID": {{ .Values.jobManagerGroupID }},
+      "JobManagerNodeSelector": {{ toJson .Values.jobManagerNodeSelector }},
       "JobManagerUserID": {{ .Values.jobManagerUserID }},
+      "JobManagerUsesPVC": {{ .Values.jobManagerUsesPVC }},
       "JobManagerUID": {{ uuidv4 | quote }},
-      {{ if eq (include "derived.addLDAPCert" .) "true" -}}
+      {{- if eq (include "derived.addLDAPCert" .) "true" -}}
       "LDAPCertPath": {{ include "paths.ldapCert" . | quote }},
       {{- end }}
       "LivenessProbeFailureThreshold": {{ .Values.livenessProbeFailureThreshold | default 3 }},
@@ -72,7 +68,9 @@ data:
       "MJSDefDir" : {{ include "paths.configDir" . | quote }},
       "Namespace": {{ .Release.Namespace | quote }},
       "NetworkLicenseManager": {{ .Values.networkLicenseManager | quote }},
+      "OverrideWorkergroupConfig": {{ include "derived.overrideWorkergroupConfig" . }},
       "Period": {{ .Values.autoScalingPeriod }},
+      "PreserveSecrets": {{ .Values.preserveSecrets | default false }},
       "PortsPerWorker": {{ .Values.portsPerWorker | default 2 }},
       "PoolProxyBasePort": {{ .Values.poolProxyBasePort }},
       "PoolProxyCPULimit": {{ .Values.poolProxyCPULimit | quote }},
@@ -98,6 +96,7 @@ data:
       "WorkerMemoryLimit": {{ .Values.workerMemoryLimit | quote }},
       "WorkerMemoryRequest": {{ .Values.workerMemoryRequest | quote }},
       "WorkerLogPVC": {{ .Values.workerLogPVC | quote }},
+      "WorkerNodeSelector": {{ toJson .Values.workerNodeSelector }},
       "WorkerPassword": {{ .Values.workerPassword | quote }},
       "WorkersPerPoolProxy": {{ .Values.workersPerPoolProxy }},
       "WorkerUsername": {{ .Values.workerUsername | quote }},

@@ -32,8 +32,10 @@ type Config struct {
 	JobManagerImagePullPolicy        string
 	JobManagerMemoryLimit            string
 	JobManagerMemoryRequest          string
+	JobManagerNodeSelector           map[string]string
 	JobManagerGroupID                int64
 	JobManagerUserID                 int64
+	JobManagerUsesPVC                bool
 	KubeConfig                       string
 	LDAPCertPath                     string
 	LivenessProbeFailureThreshold    int32
@@ -54,6 +56,7 @@ type Config struct {
 	Namespace                        string
 	NetworkLicenseManager            string
 	OpenMetricsPortOutsideKubernetes bool
+	OverrideWorkergroupConfig        bool
 	Period                           int
 	PortsPerWorker                   int
 	PoolProxyBasePort                int
@@ -63,6 +66,7 @@ type Config struct {
 	PoolProxyImagePullPolicy         string
 	PoolProxyMemoryLimit             string
 	PoolProxyMemoryRequest           string
+	PreserveSecrets                  bool
 	ReadyFile                        string
 	ResizePath                       string
 	RequireClientCertificate         bool
@@ -81,6 +85,7 @@ type Config struct {
 	WorkerLogPVC                     string
 	WorkerMemoryRequest              string
 	WorkerMemoryLimit                string
+	WorkerNodeSelector               map[string]string
 	WorkerPassword                   string
 	WorkersPerPoolProxy              int
 	WorkerUsername                   string
