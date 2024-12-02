@@ -10,14 +10,6 @@
 # Use lowercase to specify the release, for example: ARG MATLAB_RELEASE=r2024a
 ARG MATLAB_RELEASE=r2024a
 
-# Stage 1: Build the mjshealthcheck executable
-FROM golang:1.22.4 AS builder
-WORKDIR /app
-COPY healthcheck/ /app
-RUN go version
-RUN go mod tidy
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mjshealthcheck /app/main.go
-
 # When you start the build stage, by default this Dockerfile uses the Ubuntu-based matlab-deps image.
 # To check the available matlab-deps images, see: https://hub.docker.com/r/mathworks/matlab-deps
 FROM mathworks/matlab-deps:${MATLAB_RELEASE}
@@ -56,5 +48,3 @@ RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log
 
-# Add the mjshealthcheck binary
-COPY --from=builder /app/mjshealthcheck /opt/matlab/toolbox/parallel/bin/glnxa64/mjshealthcheck
