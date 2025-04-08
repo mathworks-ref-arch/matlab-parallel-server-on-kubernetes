@@ -503,6 +503,7 @@ kubectl get secrets mjs-metrics-client-certs --template="{{.data.prometheus.key 
 
 MATLAB Job Scheduler in Kubernetes uses a Kubernetes load balancer service to expose MATLAB Job Scheduler to MATLAB clients running outside of the Kubernetes cluster.
 By default, the Helm chart creates the load balancer for you.
+You can customize the annotations on the Kubernetes load balancer service by setting the `loadBalancerAnnotations` parameter in your `values.yaml` file.
 You can also create and customize your own load balancer service before you install the Helm chart.
 
 Create a Kubernetes load balancer service `mjs-ingress-proxy` to expose MATLAB Job Scheduler to MATLAB clients running outside of the Kubernetes cluster.

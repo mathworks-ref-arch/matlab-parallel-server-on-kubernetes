@@ -1,4 +1,4 @@
-// Copyright 2024 The MathWorks, Inc.
+// Copyright 2024-2025 The MathWorks, Inc.
 package resize
 
 import (
@@ -423,11 +423,13 @@ func getResizerWithFakeClientAndConfig(t *testing.T, conf *config.Config) (*MJSR
 	_, err := fakeClient.CreateService(&lb)
 	require.NoError(t, err, "Error creating load balancer service against fake K8s client")
 
+	specFactory, err := specs.NewSpecFactory(conf, "abcd")
+	require.NoError(t, err)
 	return &MJSResizer{
 		client:      fakeClient,
 		logger:      logger,
 		config:      conf,
-		specFactory: specs.NewSpecFactory(conf, "abcd"),
+		specFactory: specFactory,
 	}, fakeK8s
 }
 
@@ -520,7 +522,8 @@ func TestGetWorkersFromDeployments(t *testing.T) {
 	}
 
 	// Create deployments for these workers
-	specFactory := specs.NewSpecFactory(&config.Config{}, "abcd")
+	specFactory, err := specs.NewSpecFactory(&config.Config{}, "abcd")
+	require.NoError(t, err)
 	depList := appsv1.DeploymentList{}
 	for _, w := range workers {
 		deployment := specFactory.GetWorkerDeploymentSpec(&w.Info)
@@ -553,7 +556,8 @@ func TestGetProxiesFromDeployments(t *testing.T) {
 	}
 
 	// Create deployments for these proxies
-	specFactory := specs.NewSpecFactory(&config.Config{}, "abcd")
+	specFactory, err := specs.NewSpecFactory(&config.Config{}, "abcd")
+	require.NoError(t, err)
 	depList := appsv1.DeploymentList{}
 	for _, p := range proxies {
 		depList.Items = append(depList.Items, *specFactory.GetPoolProxyDeploymentSpec(&p))

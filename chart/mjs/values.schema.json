@@ -7,6 +7,12 @@
                 "type": "string"
             }
         },
+        "additionalWorkerPVCs": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
         "adminUser": {
             "type": "string"
         },
@@ -28,6 +34,18 @@
         "clusterHost": {
             "type": "string"
         },
+        "controllerCPULimit": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "controllerCPURequest": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
         "controllerImage": {
             "type": "string"
         },
@@ -37,6 +55,18 @@
         },
         "controllerImageTag": {
             "type": "string"
+        },
+        "controllerMemoryLimit": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "controllerMemoryRequest": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
         },
         "enableServiceLinks": {
             "type": "boolean"
@@ -50,12 +80,39 @@
                 "type": "string"
             }
         },
+        "global": {
+            "type": "object"
+        },
+        "haproxyCPULimit": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "haproxyCPURequest": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
         "haproxyImage": {
             "type": "string"
         },
         "haproxyImagePullPolicy": {
             "type": "string",
             "enum": ["Always", "Never", "IfNotPresent"]
+        },
+        "haproxyMemoryLimit": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
+        },
+        "haproxyMemoryRequest": {
+            "anyOf": [
+            { "type": "string" },
+            { "type": "number" }
+            ]
         },
         "idleStop": {
             "type": "integer",
@@ -111,6 +168,15 @@
                 "type": "string"
             }
         },
+        "jobManagerTolerations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "string"
+                }
+            }
+        },
         "jobManagerUserID": {
             "type": "integer",
             "minimum": 0
@@ -139,6 +205,12 @@
         "livenessProbeTimeout": {
             "type": "integer",
             "minimum": 1
+        },
+        "loadBalancerAnnotations": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
         },
         "logLevel": {
             "type": "integer",
@@ -307,6 +379,15 @@
         "workersPerPoolProxy": {
             "type": "integer",
             "minimum": 1
+        },
+        "workerTolerations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "string"
+                }
+            }
         },
         "workerUsername": {
             "type": "string"

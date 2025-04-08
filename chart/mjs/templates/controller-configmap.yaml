@@ -1,5 +1,5 @@
 # Config file for the MJS controller.
-# Copyright 2024 The MathWorks, Inc.
+# Copyright 2024-2025 The MathWorks, Inc.
 {{- $workerImageTag := .Values.matlabImageTag | default .Values.matlabRelease }}
 {{- $jobManagerImageTag := .Values.jobManagerImageTag | default .Values.matlabRelease }}
 {{- $workerImage := .Values.matlabImage }}
@@ -25,9 +25,10 @@ data:
         {{- $comma = "," }}
       {{- end }}
       ],
+      "AdditionalWorkerPVCs": {{ toJson (.Values.additionalWorkerPVCs | default dict) }},
       "BasePort": {{ .Values.basePort | int }},
       "CertFileName": {{ include "paths.certFile" . | quote }},
-      "CheckpointBase": {{ include "paths.checkpointbase" . | quote }},
+      "CheckpointBase": {{ include "paths.databasedir" . | quote }},
       "CheckpointPVC": {{ .Values.checkpointPVC | quote }},
       "ClusterHost": {{ .Values.clusterHost | quote }},
       "ControllerLogfile": {{ include "paths.controllerLog" . | quote }},
@@ -46,6 +47,7 @@ data:
       "JobManagerMemoryRequest": {{ .Values.jobManagerMemoryRequest | quote }},
       "JobManagerGroupID": {{ .Values.jobManagerGroupID }},
       "JobManagerNodeSelector": {{ toJson .Values.jobManagerNodeSelector }},
+      "JobManagerTolerations": {{ toJson .Values.jobManagerTolerations | quote }},
       "JobManagerUserID": {{ .Values.jobManagerUserID }},
       "JobManagerUsesPVC": {{ .Values.jobManagerUsesPVC }},
       "JobManagerUID": {{ uuidv4 | quote }},
@@ -97,6 +99,7 @@ data:
       "WorkerMemoryRequest": {{ .Values.workerMemoryRequest | quote }},
       "WorkerLogPVC": {{ .Values.workerLogPVC | quote }},
       "WorkerNodeSelector": {{ toJson .Values.workerNodeSelector }},
+      "WorkerTolerations": {{ toJson .Values.workerTolerations | quote }},
       "WorkerPassword": {{ .Values.workerPassword | quote }},
       "WorkersPerPoolProxy": {{ .Values.workersPerPoolProxy }},
       "WorkerUsername": {{ .Values.workerUsername | quote }},

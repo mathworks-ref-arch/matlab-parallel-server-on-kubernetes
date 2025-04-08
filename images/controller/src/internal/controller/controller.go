@@ -1,5 +1,5 @@
 // Package controller provides code for setting up and automatically rescaling a cluster
-// Copyright 2024 The MathWorks, Inc.
+// Copyright 2024-2025 The MathWorks, Inc.
 package controller
 
 import (
@@ -53,10 +53,14 @@ func NewController(conf *config.Config, logger *logging.Logger) (*Controller, er
 		return nil, err
 	}
 
+	specFactory, err := specs.NewSpecFactory(conf, uid)
+	if err != nil {
+		return nil, err
+	}
 	controller := &Controller{
 		config:      conf,
 		logger:      logger,
-		specFactory: specs.NewSpecFactory(conf, uid),
+		specFactory: specFactory,
 		period:      time.Duration(conf.Period) * time.Second,
 		rescaler:    rescaler,
 		stopChan:    make(chan bool),

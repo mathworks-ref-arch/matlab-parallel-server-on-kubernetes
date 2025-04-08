@@ -22,11 +22,29 @@ spec:
 
       # Schedule on same nodes as the job manager
       nodeSelector: {{ toJson .Values.jobManagerNodeSelector }}
+      tolerations: {{ toJson .Values.jobManagerTolerations }}
 
       containers:
         - name: haproxy
           image: {{ $.Values.haproxyImage }}
           imagePullPolicy: {{ $.Values.haproxyImagePullPolicy }}
+
+          # Set optional resource requests and limits
+          resources:
+            requests:
+              {{- if .Values.haproxyCPURequest }}
+              cpu: {{ .Values.haproxyCPURequest }}
+              {{- end }}
+              {{- if .Values.haproxyMemoryRequest }}
+              memory: {{ .Values.haproxyMemoryRequest }}
+              {{- end }}
+            limits:
+              {{- if .Values.haproxyCPULimit }}
+              cpu: {{ .Values.haproxyCPULimit }}
+              {{- end }}
+              {{- if .Values.haproxyMemoryLimit }}
+              memory: {{ .Values.haproxyMemoryLimit }}
+              {{- end }}
 
           # Pass the config file path as an input argument
           {{- $configDir := "/usr/local/etc/haproxy/" }}

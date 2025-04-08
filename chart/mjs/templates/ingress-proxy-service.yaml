@@ -8,6 +8,7 @@ metadata:
   name: {{ $name }}
   labels:
     app: {{ $name }}
+  annotations: {{ toJson .Values.loadBalancerAnnotations }}
 spec:
   type: LoadBalancer
   selector:

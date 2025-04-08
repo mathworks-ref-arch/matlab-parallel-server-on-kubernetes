@@ -1,4 +1,4 @@
-// Copyright 2024 The MathWorks, Inc.
+// Copyright 2024-2025 The MathWorks, Inc.
 package controller
 
 import (
@@ -312,7 +312,8 @@ func TestInternalClientsOnly(t *testing.T) {
 	}
 	zl := zaptest.NewLogger(t)
 	fakeK8s := fake.NewSimpleClientset()
-	specFactory := specs.NewSpecFactory(&conf, types.UID("abc123"))
+	specFactory, err := specs.NewSpecFactory(&conf, types.UID("abc123"))
+	require.NoError(t, err)
 	client := k8s.NewClientWithK8sBackend(&conf, fakeK8s, logging.NewFromZapLogger(zl))
 	controller := &Controller{
 		client:            client,
@@ -322,7 +323,7 @@ func TestInternalClientsOnly(t *testing.T) {
 		waitForJobManager: func() error { return nil },
 	}
 
-	err := controller.setup()
+	err = controller.setup()
 	require.NoError(t, err, "error running first controller setup")
 	verifyJobManagerCreated(t, controller)
 
@@ -506,7 +507,8 @@ func verifyClusterProfileCreated(t *testing.T, controller *Controller, secret *c
 // Create controller and mock K8s client with a Load Balancer
 func createControllerWithFakeClient(t *testing.T, conf *config.Config) (*Controller, string) {
 	zl := zaptest.NewLogger(t)
-	specFactory := specs.NewSpecFactory(conf, types.UID("abcd"))
+	specFactory, err := specs.NewSpecFactory(conf, types.UID("abcd"))
+	require.NoError(t, err)
 	fakeK8s := fake.NewSimpleClientset()
 	client := k8s.NewClientWithK8sBackend(conf, fakeK8s, logging.NewFromZapLogger(zl))
 
@@ -540,7 +542,7 @@ func createControllerWithFakeClient(t *testing.T, conf *config.Config) (*Control
 		workersCovered += conf.WorkersPerPoolProxy
 	}
 
-	_, err := client.CreateService(&lb)
+	_, err = client.CreateService(&lb)
 	require.NoError(t, err, "error creating dummy load balancer")
 
 	controller := &Controller{

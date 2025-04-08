@@ -24,11 +24,29 @@ spec:
 
       # Schedule on same nodes as the job manager
       nodeSelector: {{ toJson .Values.jobManagerNodeSelector }}
+      tolerations: {{ toJson .Values.jobManagerTolerations }}
 
       containers:
       - name: {{ $name }}
         image: {{ printf "%s:%s" .Values.controllerImage $controllerImageTag }}
         imagePullPolicy: {{ .Values.controllerImagePullPolicy }}
+
+        # Set optional resource requests and limits
+        resources:
+          requests:
+            {{- if .Values.controllerCPURequest }}
+            cpu: {{ .Values.controllerCPURequest }}
+            {{- end }}
+            {{- if .Values.controllerMemoryRequest }}
+            memory: {{ .Values.controllerMemoryRequest }}
+            {{- end }}
+          limits:
+            {{- if .Values.controllerCPULimit }}
+            cpu: {{ .Values.controllerCPULimit }}
+            {{- end }}
+            {{- if .Values.controllerMemoryLimit }}
+            memory: {{ .Values.controllerMemoryLimit }}
+            {{- end }}
 
         # The controller process requires the path to a config file as an input argument
         # This file is mounted from a ConfigMap (defined in mjs.yaml)

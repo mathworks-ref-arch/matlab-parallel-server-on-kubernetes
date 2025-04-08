@@ -51,20 +51,20 @@ data:
     # Add LDAP certificate to the Java trust store
     chmod +w {{ $trustStorePath }}
     yes | {{ include "paths.matlabroot" . }}/sys/java/jre/glnxa64/jre/bin/keytool -import -keystore {{ $trustStorePath }} -file {{ include "paths.ldapCert" . }} -storepass changeit > /dev/null
- 
+
     {{ end -}}
     # Start the MJS service
     {{ printf "%s/mjs" $binDir }} start -mjsdef {{ $localMJSDef }} -loglevel {{ .Values.logLevel }} -disablereliableconnections
 
     # Start the job manager
-    {{- $jmCommand := printf "%s/startjobmanager -name \"%s\" -baseport %d" $binDir .Values.jobManagerName $basePort }}
+    {{- $jmCommand := printf "%s/startjobmanager -name \"%s\" -baseport %d -databaseDirectory %s" $binDir .Values.jobManagerName $basePort (include "paths.databasedir" .) }}
     {{- if .Values.requireClientCertificate }}
       {{- $jmCommand = printf "%s -certificate \"%s\"" $jmCommand (include "paths.certPath" .) }}
     {{- end }}
     {{- if .Values.requireScriptVerification }}
       {{- $jmCommand = printf "%s -secretfile \"%s\"" $jmCommand (include "paths.secretPath" .) }}
     {{- end }}
-    {{ $jmCommand }} || echo "startjobmanager failed; there may already be a job manager running"
+    {{ $jmCommand }}
 
     # Keep the container running
     sleep infinity

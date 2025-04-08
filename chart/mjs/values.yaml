@@ -1,5 +1,5 @@
 # Default values for MATLAB Job Scheduler (MJS) in Kubernetes.
-# Copyright 2024 The MathWorks, Inc.
+# Copyright 2024-2025 The MathWorks, Inc.
 
 # Release number of the MATLAB version to use
 matlabRelease: "r2024a"
@@ -60,10 +60,20 @@ poolProxyCPULimit: "" # CPU limit for each parallel pool proxy process
 poolProxyCPURequest: "0.5" # CPU request for each parallel pool proxy process
 poolProxyMemoryLimit: "" # Memory limit for each parallel pool proxy process
 poolProxyMemoryRequest: "500Mi" # Memory request for each parallel pool proxy process
+controllerCPULimit: "" # CPU limit for the MJS controller
+controllerCPURequest: "100m" # CPU request for the MJS controller
+controllerMemoryLimit: "" # Memory limit for the MJS controller
+controllerMemoryRequest: "128Mi" # Memory request for the MJS controller
+haproxyCPULimit: "" # CPU limit for the HAProxy pod
+haproxyCPURequest: "100m" # CPU request for the HAProxy pod
+haproxyMemoryLimit: "" # Memory limit for the HAProxy pod
+haproxyMemoryRequest: "256Mi" # Memory request for the HAProxy pod
 
 # Node settings
 jobManagerNodeSelector: {} # Node selector for the job manager, specified as key-value pairs
 workerNodeSelector: {} # Node selector for the workers, specified as key-value pairs
+jobManagerTolerations: [] # Tolerations for the job manager pod
+workerTolerations: [] # Tolerations for the worker pods
 
 # Auto-scaling settings
 idleStop: 300 # Time after which idle worker pods will be removed
@@ -72,6 +82,7 @@ stopWorkerGracePeriod: 60 # Grace period in seconds for running stopworker
 
 # Network settings
 autoCreateLoadBalancer: true # Flag to automatically create a Kubernetes load balancer to expose MATLAB Job Scheduler to MATLAB clients outside the cluster
+loadBalancerAnnotations: {} # Annotations to use for the load balancer
 
 # Parallel pool proxy settings
 poolProxyBasePort: 30000 # Base port for parallel pool proxies
@@ -93,6 +104,9 @@ matlabDepsImage: "mathworks/matlab-deps"
 matlabPVC: "" # Name of a PVC that contains a MATLAB Parallel Server installation to use. If this is set, the matlabDepsImage parameter is used for the worker containers instead of the matlabImage parameter
 jobManagerUsesPVC: false # If true, the job manager container mounts the MATLAB Parallel Server installation from the PVC rather than using the jobManagerImage parameter
 additionalMatlabPVCs: [] # Names of PersistentVolumeClaims containing installations of older MATLAB Parallel Server releases, specified as an array
+
+# Worker pod settings
+additionalWorkerPVCs: {} # Additional PersistentVolumeClaims to mount on worker pods, specifed as a map of claim names to mount paths
 
 # Specify the maximum number of workers that the cluster can automatically resize to in your custom values.yaml file.
 # maxWorkers: 32

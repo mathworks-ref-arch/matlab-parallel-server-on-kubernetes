@@ -1,9 +1,10 @@
 // Package specs contains functions for creating Kubernetes resource specs
-// Copyright 2024 The MathWorks, Inc.
+// Copyright 2024-2025 The MathWorks, Inc.
 package specs
 
 import (
 	"controller/internal/config"
+	"encoding/json"
 	"fmt"
 	"math"
 	"path/filepath"
@@ -20,8 +21,10 @@ import (
 
 // SpecFactory generates Kubernetes resource specs
 type SpecFactory struct {
-	config    *config.Config
-	ownerRefs []metav1.OwnerReference
+	config                *config.Config
+	ownerRefs             []metav1.OwnerReference
+	workerTolerations     []corev1.Toleration
+	jobManagerTolerations []corev1.Toleration
 }
 
 // Volume names
@@ -56,7 +59,7 @@ const (
 )
 
 // NewSpecFactory constructs a SpecFactory
-func NewSpecFactory(conf *config.Config, ownerUID types.UID) *SpecFactory {
+func NewSpecFactory(conf *config.Config, ownerUID types.UID) (*SpecFactory, error) {
 	// Store owner reference for all created resources
 	ownerRefs := []metav1.OwnerReference{}
 	if !conf.LocalDebugMode {
@@ -69,10 +72,23 @@ func NewSpecFactory(conf *config.Config, ownerUID types.UID) *SpecFactory {
 			},
 		}
 	}
-	return &SpecFactory{
-		config:    conf,
-		ownerRefs: ownerRefs,
+
+	// Parse tolerations from strings
+	jobManagerTolerations, err := parseTolerations(conf.JobManagerTolerations)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse job manager tolerations '%s': %v", conf.JobManagerTolerations, err)
 	}
+	workerTolerations, err := parseTolerations(conf.WorkerTolerations)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse worker tolerations '%s': %v", conf.WorkerTolerations, err)
+	}
+
+	return &SpecFactory{
+		config:                conf,
+		ownerRefs:             ownerRefs,
+		jobManagerTolerations: jobManagerTolerations,
+		workerTolerations:     workerTolerations,
+	}, nil
 }
 
 // GetWorkerDeploymentSpec creates a spec for a deployment running an MJS worker pod
@@ -146,6 +162,7 @@ func (s *SpecFactory) GetWorkerDeploymentSpec(w *WorkerInfo) *appsv1.Deployment 
 	}
 	s.setEnableServiceLinks(&pod)
 	pod.NodeSelector = s.config.WorkerNodeSelector
+	pod.Tolerations = s.workerTolerations
 
 	// Add volumes
 	addVolumeFromConfigMap(&pod, s.config.MJSDefConfigMap, mjsDefVolumeName, s.config.MJSDefDir)
@@ -162,6 +179,11 @@ func (s *SpecFactory) GetWorkerDeploymentSpec(w *WorkerInfo) *appsv1.Deployment 
 		addVolumeFromSecret(&pod, proxy.Name, proxyCertVolumeName, proxyCertDir, false)
 	}
 	s.addAdditionalMatlabPVCs(&pod)
+
+	// Add custom PVCs
+	for pvc, path := range s.config.AdditionalWorkerPVCs {
+		addVolumeFromPVC(&pod, pvc, pvc, path, false)
+	}
 
 	if s.config.OverrideWorkergroupConfig {
 		configPath := filepath.Join(s.config.MatlabRoot, "toolbox", "parallel", "config", "workergroup.config")
@@ -241,6 +263,7 @@ func (s *SpecFactory) GetPoolProxyDeploymentSpec(proxy *PoolProxyInfo) *appsv1.D
 	}
 	s.setEnableServiceLinks(&pod)
 	pod.NodeSelector = s.config.WorkerNodeSelector
+	pod.Tolerations = s.workerTolerations
 
 	// Add volumes
 	if s.config.MatlabPVC != "" {
@@ -344,6 +367,7 @@ func (s *SpecFactory) GetJobManagerDeploymentSpec() *appsv1.Deployment {
 	}
 	s.setEnableServiceLinks(&pod)
 	pod.NodeSelector = s.config.JobManagerNodeSelector
+	pod.Tolerations = s.jobManagerTolerations
 
 	// Add volumes
 	addVolumeFromConfigMap(&pod, s.config.MJSDefConfigMap, mjsDefVolumeName, s.config.MJSDefDir)
@@ -683,4 +707,13 @@ func addVolumeFromConfigMapFile(pod *corev1.PodSpec, configMapName, volumeName, 
 		Name:         volumeName,
 		VolumeSource: source,
 	})
+}
+
+func parseTolerations(input string) ([]corev1.Toleration, error) {
+	var tolerations []corev1.Toleration
+	if input == "" {
+		return tolerations, nil
+	}
+	err := json.Unmarshal([]byte(input), &tolerations)
+	return tolerations, err
 }

@@ -6,14 +6,20 @@
 /opt/matlab
 {{- end -}}
 
-# Checkpoint base on containers
-# If running as non-root user and not mounting checkpointbase, use a directory that a non-root user can create 
+# Checkpoint base on containers; all MJS data except the job database is stored here.
+# Note that this data is not persisted across pod restarts, as we want a fresh MJS every time.
 {{- define "paths.checkpointbase" -}}
+/tmp/checkpoint
+{{- end -}}
+
+# Database directory on the job manager pod.
+# If running as non-root user and not mounting a checkpoint PVC, use a directory that a non-root user can create 
+{{- define "paths.databasedir" -}}
 {{- $isNonRoot := ne (int $.Values.jobManagerUserID) 0 -}}
 {{- if and $isNonRoot (empty $.Values.checkpointPVC) -}} 
-/tmp/checkpoint
+/tmp/database
 {{- else -}}
-/mjs/checkpoint
+/mjs/database
 {{- end -}}
 {{- end -}}
 

@@ -1,8 +1,9 @@
-// Copyright 2024 The MathWorks, Inc.
+// Copyright 2024-2025 The MathWorks, Inc.
 package specs
 
 import (
 	"controller/internal/config"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -37,7 +38,8 @@ func TestGetWorkerDeploymentSpec(t *testing.T) {
 			conf.WorkerNodeSelector = map[string]string{"node-type": "worker"}
 
 			// Create a SpecFactory
-			specFactory := NewSpecFactory(conf, ownerUID)
+			specFactory, err := NewSpecFactory(conf, ownerUID)
+			require.NoError(t, err)
 			assert.NotNil(t, specFactory)
 			assert.Equal(t, conf, specFactory.config)
 
@@ -53,7 +55,8 @@ func TestCalculateProxyForWorker(t *testing.T) {
 	conf := &config.Config{
 		WorkersPerPoolProxy: 10,
 	}
-	specFactory := NewSpecFactory(conf, "abcd")
+	specFactory, err := NewSpecFactory(conf, "abcd")
+	require.NoError(t, err)
 	assert.Equal(t, 1, specFactory.CalculatePoolProxyForWorker(1))
 	assert.Equal(t, 1, specFactory.CalculatePoolProxyForWorker(10))
 	assert.Equal(t, 2, specFactory.CalculatePoolProxyForWorker(11))
@@ -88,7 +91,8 @@ func TestMPIPorts(t *testing.T) {
 	ownerUID := types.UID("abcd1234")
 	conf := createTestConfig()
 	conf.BasePort = 30000
-	specFactory := NewSpecFactory(conf, ownerUID)
+	specFactory, err := NewSpecFactory(conf, ownerUID)
+	require.NoError(t, err)
 
 	worker := WorkerInfo{
 		Name:     "worker",
@@ -157,7 +161,8 @@ func TestGetJobManagerSpecs(t *testing.T) {
 			conf.JobManagerNodeSelector = map[string]string{"node-type": "jobmanager"}
 
 			// Create a SpecFactory
-			specFactory := NewSpecFactory(conf, ownerUID)
+			specFactory, err := NewSpecFactory(conf, ownerUID)
+			require.NoError(t, err)
 			assert.NotNil(tt, specFactory)
 			assert.Equal(tt, conf, specFactory.config)
 
@@ -176,7 +181,8 @@ func TestExtraWorkerEnv(t *testing.T) {
 	}
 	conf.ExtraWorkerEnvironment = extraEnv
 
-	specFactory := NewSpecFactory(conf, types.UID("abc"))
+	specFactory, err := NewSpecFactory(conf, types.UID("abc"))
+	require.NoError(t, err)
 	workerSpec := specFactory.GetWorkerDeploymentSpec(&WorkerInfo{
 		Name:     "worker1",
 		ID:       1,
@@ -213,7 +219,8 @@ func TestAdditionalMatlabRoots(t *testing.T) {
 		t.Run(tc.name, func(tt *testing.T) {
 			conf := createTestConfig()
 			conf.AdditionalMatlabPVCs = tc.matlabPVCs
-			specFactory := NewSpecFactory(conf, types.UID("abc"))
+			specFactory, err := NewSpecFactory(conf, types.UID("abc"))
+			require.NoError(t, err)
 			workerSpec := specFactory.GetWorkerDeploymentSpec(&WorkerInfo{
 				Name:     "worker1",
 				ID:       1,
@@ -221,6 +228,26 @@ func TestAdditionalMatlabRoots(t *testing.T) {
 			})
 			verifyAdditionalMatlabPVCs(tt, workerSpec, tc.matlabPVCs, tc.expectedAdditionalMatlabRoots)
 		})
+	}
+}
+
+// Verify that if AdditionalWorkerPVCs is set, the extra PVCs get mounted onto the worker pods
+func TestAdditionalWorkerPVCs(t *testing.T) {
+	pvcMap := map[string]string{
+		"my-pvc-1": "/tmp/pvc",
+		"my-pvc-2": "/mnt/shared",
+	}
+	conf := createTestConfig()
+	conf.AdditionalWorkerPVCs = pvcMap
+	specFactory, err := NewSpecFactory(conf, types.UID("abc"))
+	require.NoError(t, err)
+	workerSpec := specFactory.GetWorkerDeploymentSpec(&WorkerInfo{
+		Name:     "worker1",
+		ID:       1,
+		HostName: "host1",
+	})
+	for pvc, path := range pvcMap {
+		verifyPVCMountedOnPod(t, &workerSpec.Spec.Template.Spec, pvc, path)
 	}
 }
 
@@ -242,7 +269,8 @@ func TestMountLDAPCert(t *testing.T) {
 			conf.LDAPCertPath = filepath.Join(tc.ldapCertDir, tc.certFile)
 
 			// Create a job manager spec
-			specFactory := NewSpecFactory(conf, ownerUID)
+			specFactory, err := NewSpecFactory(conf, ownerUID)
+			require.NoError(t, err)
 			require.NotNil(tt, specFactory)
 			require.Equal(tt, conf, specFactory.config)
 			spec := specFactory.GetJobManagerDeploymentSpec()
@@ -279,7 +307,8 @@ func TestMountMetricsSecret(t *testing.T) {
 			conf.MetricsCertDir = metricsDir
 
 			// Create a job manager spec
-			specFactory := NewSpecFactory(conf, ownerUID)
+			specFactory, err := NewSpecFactory(conf, ownerUID)
+			require.NoError(t, err)
 			require.NotNil(tt, specFactory)
 			require.Equal(tt, conf, specFactory.config)
 			spec := specFactory.GetJobManagerDeploymentSpec()
@@ -311,7 +340,8 @@ func TestGetSecretSpec(t *testing.T) {
 		t.Run(tc.name, func(tt *testing.T) {
 			conf := createTestConfig()
 			conf.PreserveSecrets = tc.preserveSecrets
-			specFactory := NewSpecFactory(conf, ownerUID)
+			specFactory, err := NewSpecFactory(conf, ownerUID)
+			require.NoError(t, err)
 
 			secretName := "my-secret"
 			secret := specFactory.GetSecretSpec(secretName, tc.preserveSecrets)
@@ -325,6 +355,79 @@ func TestGetSecretSpec(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test the use of tolerations
+func TestTolerations(t *testing.T) {
+	ownerUID := types.UID("abcd1234")
+	conf := createTestConfig()
+
+	workerTols := []corev1.Toleration{
+		{
+			Key:      "worker-tol1",
+			Operator: "Exists",
+			Effect:   "NoSchedule",
+			Value:    "my-tol",
+		},
+		{
+			Key:      "jm-tol1",
+			Operator: "Exists",
+			Effect:   "NoSchedule",
+			Value:    "another-tol",
+		},
+	}
+	jobManagerTols := []corev1.Toleration{
+		{
+			Key:      "jm-tol",
+			Operator: "Exists",
+			Effect:   "NoSchedule",
+			Value:    "jm-tol",
+		},
+	}
+
+	// Pass the tolerations as a string
+	workerTolsString, err := json.Marshal(workerTols)
+	require.NoError(t, err)
+	jobManagerTolsString, err := json.Marshal(jobManagerTols)
+	require.NoError(t, err)
+	conf.WorkerTolerations = string(workerTolsString)
+	conf.JobManagerTolerations = string(jobManagerTolsString)
+
+	// Create a SpecFactory
+	specFactory, err := NewSpecFactory(conf, ownerUID)
+	require.NoError(t, err)
+	assert.NotNil(t, specFactory)
+	assert.Equal(t, conf, specFactory.config)
+
+	// Verify the job manager spec
+	jmSpec := specFactory.GetJobManagerDeploymentSpec()
+	assert.Equal(t, jobManagerTols, jmSpec.Spec.Template.Spec.Tolerations, "Job manager tolerations do not match")
+
+	// Verify the worker spec
+	workerSpec := specFactory.GetWorkerDeploymentSpec(&WorkerInfo{
+		Name:     "test-with-tols",
+		ID:       1,
+		HostName: "localhost",
+	})
+	assert.Equal(t, workerTols, workerSpec.Spec.Template.Spec.Tolerations, "Worker tolerations do not match")
+}
+
+// Check we get an error if we pass an invalid string
+func TestTolerationsError(t *testing.T) {
+	ownerUID := types.UID("abcd1234")
+	conf := createTestConfig()
+
+	// Check error when the worker tolerations are invalid
+	conf.WorkerTolerations = "invalid-json"
+	conf.JobManagerTolerations = ""
+	_, err := NewSpecFactory(conf, ownerUID)
+	assert.Error(t, err, "Expected error when worker tolerations are invalid")
+
+	// Check error when the job manager tolerations are invalid
+	conf.JobManagerTolerations = "invalid-json"
+	conf.WorkerTolerations = ""
+	_, err = NewSpecFactory(conf, ownerUID)
+	assert.Error(t, err, "Expected error when job manager tolerations are invalid")
 }
 
 func verifyWorkerSpecs(t *testing.T, specFactory *SpecFactory, conf *config.Config, ownerUID types.UID) {
@@ -547,6 +650,22 @@ func verifyPodHasVolume(t *testing.T, pod *corev1.PodSpec, volumeName string) (*
 	volMount, hasMount := podHasVolumeMount(pod, volumeName)
 	assert.Truef(t, hasMount, "Volume mount %s not found in container spec", volumeName)
 	return vol, volMount
+}
+
+func verifyPVCMountedOnPod(t *testing.T, pod *corev1.PodSpec, pvcName, mountPath string) {
+	for _, vol := range pod.Volumes {
+		if pvc := vol.VolumeSource.PersistentVolumeClaim; pvc != nil && pvc.ClaimName == pvcName {
+			for _, container := range pod.Containers {
+				for _, mount := range container.VolumeMounts {
+					if mount.Name == vol.Name {
+						assert.Equalf(t, mount.MountPath, mountPath, "Volume mount path for %s does not match expected path", pvcName)
+					}
+				}
+			}
+			return
+		}
+	}
+	assert.Failf(t, "Persistent volume claim %s not found on pod", pvcName)
 }
 
 func verifyPodDoesNotHaveVolume(t *testing.T, pod *corev1.PodSpec, volumeName string) {

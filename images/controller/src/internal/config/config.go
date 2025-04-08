@@ -1,5 +1,5 @@
 // Package config defines configurable controller settings and enables them to be loaded from a JSON file
-// Copyright 2024 The MathWorks, Inc.
+// Copyright 2024-2025 The MathWorks, Inc.
 package config
 
 import (
@@ -13,6 +13,7 @@ import (
 // Config contains configurable controller settings
 type Config struct {
 	AdditionalMatlabPVCs             []string
+	AdditionalWorkerPVCs             map[string]string
 	ControllerLogfile                string
 	BasePort                         int
 	CertFileName                     string
@@ -33,6 +34,7 @@ type Config struct {
 	JobManagerMemoryLimit            string
 	JobManagerMemoryRequest          string
 	JobManagerNodeSelector           map[string]string
+	JobManagerTolerations            string
 	JobManagerGroupID                int64
 	JobManagerUserID                 int64
 	JobManagerUsesPVC                bool
@@ -86,6 +88,7 @@ type Config struct {
 	WorkerMemoryRequest              string
 	WorkerMemoryLimit                string
 	WorkerNodeSelector               map[string]string
+	WorkerTolerations                string
 	WorkerPassword                   string
 	WorkersPerPoolProxy              int
 	WorkerUsername                   string

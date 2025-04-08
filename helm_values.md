@@ -7,18 +7,27 @@ If you do not include a parameter in your YAML file, your configuration uses the
 **Parameter**                         | **Description** | **Default Value**
 --------------------------------------|-----------------|-------------------
 `additionalMatlabPVCs`                | Names of PersistentVolumeClaims containing installations of older MATLAB Parallel Server releases, specified as an array. | `[]`
+`additionalWorkerPVCs`                | Additional PersistentVolumeClaims to mount on worker pods, specifed as a map of claim names to the paths at which those claims should be mounted on the pods. For example, to mount a claim `my-pvc` at path `/shared/data` on the pods, set this parameter to  `{"my-pvc":"/shared/data"}`. | `{}`
 `adminUser`                           | Username of the cluster administrator. | `admin`
 `autoCreateLoadBalancer`              | Flag to automatically create a Kubernetes load balancer to expose MATLAB Job Scheduler to MATLAB clients outside the cluster. See the [Customize Load Balancer](README.md#customize-load-balancer) section for instructions to create your own load balancer. | `true`
 `autoScalingPeriod`                   | Period in seconds with which the controller checks the cluster's size requirements and automatically scales the number of workers up and down if needed. | `15`
 `basePort`                            | Base port of the MATLAB Job Scheduler service. | `27350`
 `checkpointPVC`                       | Name of the PersistentVolumeClaim that is bound to the PersistentVolume used to retain job data. | &mdash;
 `clusterHost`                         | Custom host to use in the cluster profile. If unset, the cluster profile uses the external address of the load balancer. | &mdash;
+`controllerCPULimit`                  | CPU limit for the MATLAB Job Scheduler controller pod. | &mdash;
+`controllerCPURequest`                | CPU request for the MATLAB Job Scheduler controller pod. | `100m`
 `controllerImage`                     | URI of the image to use for the MATLAB Job Scheduler controller, a pod that creates the job manager and automatically scales the number workers up and down. Set this value if you want to use a privately hosted version of this image rather than the version hosted on the GitHub Container registry. | `ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-controller-image`
 `controllerImagePullPolicy`           | Pull policy for the MATLAB Job Scheduler controller. | `IfNotPresent`
 `controllerImageTag`                  | Tag of the image to use for the MATLAB Job Scheduler controller. If you do not set this value, the Helm chart uses the `appVersion` defined in `Chart.yaml` as the tag. | &mdash;
+`controllerMemoryLimit`               | Memory limit for the MATLAB Job Scheduler controller pod. | &mdash;
+`controllerMemoryRequest`             | Memory request for the MATLAB Job Scheduler controller pod. | `128Mi`
 `exportMetrics`                       | Flag to export cluster monitoring metrics from the job manager. | `false`
+`haproxyCPULimit`                     | CPU limit for the HAproxy pod. | &mdash;
+`haproxyCPURequest`                   | CPU request for the HAproxy pod. | `100m`
 `haproxyImage`                        | URI of the [HAproxy Docker image](https://hub.docker.com/_/haproxy/), which is used to proxy incoming traffic. Set this value if you want to use a privately hosted version of this image. | `haproxy`
 `haproxyImagePullPolicy`              | Pull policy for the HAproxy image. | `IfNotPresent`
+`haproxyMemoryLimit`                  | Memory limit for the HAproxy pod. | &mdash;
+`haproxyMemoryRequest`                | Memory request for the HAproxy pod. | `256Mi`
 `idleStop`                            | Time in seconds after which idle worker pods are removed. | `300`
 `internalClientsOnly`                 | Flag to allow only MATLAB clients running inside the Kubernetes cluster to connect to the MATLAB Job Scheduler. | `false`
 `jobManagerCPULimit`                  | CPU limit for the job manager pod. | &mdash;
@@ -31,11 +40,13 @@ If you do not include a parameter in your YAML file, your configuration uses the
 `jobManagerMemoryRequest`             | Memory request for the job manager pod. | `4Gi`
 `jobManagerName`                      | Name of the MATLAB Job Scheduler job manager. | `MJS_Kubernetes`
 `jobManagerNodeSelector`              | Node selector for the job manager pod, specified as key-value pairs that match the labels of the Kubernetes nodes you want to run the job manager on. For example, to run the job manager on nodes with label `node-type=jobmanager`, set this parameter to `{"node-type":"jobmanager"}`. You must assign the appropriate labels to your nodes before you can use the `nodeSelector` feature. For more information, see [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node) on the Kubernetes website. | `{}`
+`jobManagerTolerations`               | Tolerations for the job manager pod, specified as a list of Kubernetes toleration objects. For example, to tolerate the `node-type=job-manager` taint, set this parameter to `[{"key":"node-type","operator":"Equal","value":"job-manager","effect":"NoSchedule"}]`. For more information, see [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/) on the Kubernetes website. | `[]`
 `jobManagerUserID`                    | User ID of the user account that MATLAB Job Scheduler uses to run the job manager pod. The user must have write permission for the checkpoint and log PersistentVolumes. To find the user ID, on a Linux machine, run `id -u` in the terminal. | `0`
 `jobManagerUsesPVC`                   | Flag to mount a MATLAB Parallel Server installation from a PersistentVolume onto the job manager pod if the `matlabPVC` parameter is set. If this flag is set to true, the job manager pod uses the image specified in the `matlabDepsImage` parameter. | `false`
 `ldapSecurityPrincipalFormat`         | Format of a security principal (user) for your LDAP server. | &mdash;
 `ldapSynchronizationIntervalSecs`     | Frequency at which the cluster synchronizes with the LDAP server. | `1800`
 `ldapURL`                             | URL of an LDAP server to authenticate user credentials. If you are using LDAP over SSL (LDAPS) to encrypt communication between the LDAP server and clients, follow the instructions to [configure LDAP over SSL](README.md#configure-ldap-over-ssl). | &mdash;
+`loadBalancerAnnotations`             | Annotations to use for the load balancer service, specified as key-value pairs. | `{}`
 `logLevel`                            | Verbosity level of MATLAB Job Scheduler logging. | `0`
 `logPVC`                              | Name of the PersistentVolumeClaim that is bound to the PersistentVolume used to retain job manager logs. | &mdash;
 `matlabDepsImage`                     | URI of the MATLAB dependencies image to use for the MATLAB Job Scheduler worker pods if the MATLAB Parallel Server installation is mounted from a PersistentVolume. The worker pods only use this image if the `matlabPVC` parameter is set. The worker pods use the `matlabImageTag` parameter as the image tag. | `mathworks/matlab-deps`
@@ -71,6 +82,7 @@ If you do not include a parameter in your YAML file, your configuration uses the
 `workerMemoryRequest`                 | Memory request for each worker pod. | `8Gi`
 `workerNodeSelector`                  | Node selector for the worker pods, specified as key-value pairs that match the labels of the Kubernetes nodes you want to run the workers on. For example, to run the workers on nodes with label `node-type=worker`, set this parameter to `{"node-type":"worker"}`. You must assign the appropriate labels to your nodes before you can use the `nodeSelector` feature. For more information, see [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node) on the Kubernetes website. | `{}`
 `workerPassword`                      | Password of the username that MATLAB Parallel Server uses to run jobs. | `matlab`
+`workerTolerations`                   | Tolerations for the worker pods, specified as a list of Kubernetes toleration objects. For example, to tolerate the `node-type=worker` taint, set this parameter to `[{"key":"node-type","operator":"Equal","value":"worker","effect":"NoSchedule"}]`. For more information, see [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/) on the Kubernetes website. | `[]`
 `workerUsername`                      | Username that MATLAB Parallel Server uses to run jobs. | `matlab`
 `workersPerPoolProxy`                 | Maximum number of workers using each parallel pool proxy. | `32`
 <!-- END HELM VALUES TABLE -->

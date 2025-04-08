@@ -50,7 +50,10 @@ func NewMJSResizer(conf *config.Config, uid types.UID, logger *logging.Logger) (
 		logger: logger,
 		client: client,
 	}
-	m.specFactory = specs.NewSpecFactory(conf, uid)
+	m.specFactory, err = specs.NewSpecFactory(conf, uid)
+	if err != nil {
+		return nil, err
+	}
 	return &m, nil
 }
 
