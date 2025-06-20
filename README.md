@@ -409,7 +409,7 @@ If you want to increase the performance of creating worker pods or customise the
 To build a custom Docker image, see [Create a MATLAB Parallel Server Container Image](images/worker/README.md).
 Push the image to a repository that is visible to your Kubernetes cluster.
 
-Modify your `values.yaml` file to set the `workerImage` and `workerImageTag` parameters to the URI and tag of your image before installating the Helm chart.
+Modify your `values.yaml` file to set the `matlabImage` and `matlabImageTag` parameters to the URI and tag of your image before installing the Helm chart.
 
 #### Mount MATLAB from a PersistentVolume
 
@@ -417,8 +417,8 @@ To mount MATLAB from a PersistentVolume, create a PersistentVolume and Persisten
 For example, if your Kubernetes cluster runs on-premise, you could create a PersistentVolume from an NFS server containing the MATLAB Parallel Server installation.
 For details on creating the PersistentVolumeClaim, see the [Create Persistent Volumes](#create-persistent-volumes) section.
 
-Modify your `values.yaml` file to set the `matlabPVC` parameter to the name of your PersistentVolumeClaim before installating the Helm chart.
-The worker pods will now use the image URI specified in the `matlabDepsImage` parameter instead of the `workerImage` parameter.
+Modify your `values.yaml` file to set the `matlabPVC` parameter to the name of your PersistentVolumeClaim before installing the Helm chart.
+The worker pods will now use the image URI specified in the `matlabDepsImage` parameter instead of the `matlabImage` parameter.
 
 ### Run Multiple MATLAB Parallel Server Versions
 
@@ -581,4 +581,4 @@ To request assistance or additional features, contact [MathWorks Technical Suppo
 
 ---
 
-Copyright 2024 The MathWorks, Inc.
+Copyright 2024-2025 The MathWorks, Inc.
