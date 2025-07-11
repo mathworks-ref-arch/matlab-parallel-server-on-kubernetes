@@ -1,14 +1,14 @@
-# Copyright 2024 The MathWorks, Inc.
+# Copyright 2024-2025 The MathWorks, Inc.
 # This Dockerfile allows you to build a Docker® image for the MATLAB® Job Scheduler job manager.
 # The MATLAB Package Manager installs MATLAB and MATLAB Parallel Server on the image.
 # Use the optional build argument to customize the version of MATLAB the MATLAB Package Manager installs.
 
 # Here is an example docker build command with the optional build argument.
-# docker build --build-arg MATLAB_RELEASE=r2024a -t mjs-job-manager .
+# docker build --build-arg MATLAB_RELEASE=r2025a -t mjs-job-manager .
 
 # To specify which MATLAB release to install in the container, edit the value of the MATLAB_RELEASE argument.
-# Use lowercase to specify the release, for example: ARG MATLAB_RELEASE=r2024a
-ARG MATLAB_RELEASE=r2024a
+# Use lowercase to specify the release, for example: ARG MATLAB_RELEASE=r2025a
+ARG MATLAB_RELEASE=r2025a
 
 # When you start the build stage, by default this Dockerfile uses the Ubuntu-based matlab-deps image.
 # To check the available matlab-deps images, see: https://hub.docker.com/r/mathworks/matlab-deps

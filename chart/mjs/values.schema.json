@@ -238,7 +238,7 @@
         },
         "matlabRelease": {
             "type": "string",
-            "enum": ["r2024a", "r2024b"]
+            "enum": ["r2024a", "r2024b", "r2025a"]
         },
         "maxWorkers": {
             "type": "integer",

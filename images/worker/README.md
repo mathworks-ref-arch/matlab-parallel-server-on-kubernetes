@@ -31,7 +31,7 @@ The `mpm-input-files/` folder contains a folder for each MATLAB release that sup
 - `support-packages.txt`: An `mpm` input file containing a list of support packages to install. By default, the input file only installs Deep Learning support packages.
 
 Edit the files in the directory corresponding to the release you want to build an image for.
-For example, if you want to build an image for MATLAB R2024a with custom MATLAB toolboxes, edit the `mpm-input-files/r2024a/toolboxes.txt` file.
+For example, if you want to build an image for MATLAB R2025a with custom MATLAB toolboxes, edit the `mpm-input-files/r2025a/toolboxes.txt` file.
 
 Comment out any toolboxes or support packages you do not want to install by adding a `#` symbol before the toolbox or support package name.
 Uncomment any support packages you want to install by removing the `#` symbol from the beginning of the line containing the support package name.
@@ -39,7 +39,7 @@ Uncomment any support packages you want to install by removing the `#` symbol fr
 ### Build Image
 
 Build the Docker image.
-- Specify `<release>` as a MATLAB release number with a lowercase `r`. For example, to install MATLAB R2024a, specify `<release>` as `r2024a`.
+- Specify `<release>` as a MATLAB release number with a lowercase `r`. For example, to install MATLAB R2025a, specify `<release>` as `r2025a`.
 - Specify `<include-simulink>` as `true` to install Simulink and the Simulink toolboxes, or `false` to only install MATLAB toolboxes and support packages.
 - Specify `<my-tag>` as the Docker tag to use for the image.
 
@@ -49,4 +49,4 @@ docker build --build-arg MATLAB_RELEASE=<release> --build-arg INCLUDE_SIMULINK=<
 
 ---
 
-Copyright 2024 The MathWorks, Inc.
+Copyright 2024-2025 The MathWorks, Inc.
