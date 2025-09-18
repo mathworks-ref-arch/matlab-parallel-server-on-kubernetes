@@ -4,11 +4,11 @@
 # Use the optional build argument to customize the version of MATLAB the MATLAB Package Manager installs.
 
 # Here is an example docker build command with the optional build arguments.
-# docker build --build-arg MATLAB_RELEASE=r2025a -t matlab-parallel-server .
+# docker build --build-arg MATLAB_RELEASE=r2025b -t matlab-parallel-server .
 
 # To specify which MATLAB release to install in the container, edit the value of the MATLAB_RELEASE argument.
-# Use lowercase to specify the release, for example: ARG MATLAB_RELEASE=r2025a
-ARG MATLAB_RELEASE=r2025a
+# Use lowercase to specify the release, for example: ARG MATLAB_RELEASE=r2025b
+ARG MATLAB_RELEASE=r2025b
 FROM ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-job-manager-image:${MATLAB_RELEASE}
 
 # Declare build arguments to use at the current build stage.

@@ -1,4 +1,4 @@
-# Copyright 2024 The MathWorks, Inc.
+# Copyright 2024-2025 The MathWorks, Inc.
 name: Build and push MATLAB Parallel Server images
 
 on:
@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        matlab-release: [r2024a, r2024b, r2025a]
+        matlab-release: [r2024a, r2024b, r2025a, r2025b]
 
     steps:
       - name: Checkout repo
