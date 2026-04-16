@@ -1,11 +1,101 @@
-{{- if eq (include "derived.overrideWorkergroupConfig" .) "true" -}}
-# Config files for the MJS workers.
-# Copyright 2024 The MathWorks, Inc.
+# ConfigMap containing scripts for the worker pods.
+# Copyright 2024-2026 The MathWorks, Inc.
+{{- $localMJSDef := "/tmp/mjs_def.sh" }}
+{{- $binDir := include "paths.binDir" . }}
+{{- $startFile := "/tmp/worker-started" }}
+{{- $stopFile := "/tmp/worker-stopped" }}
+{{- $additionalMatlabRoots := list }}
+{{- if .Values.additionalMatlabPVCs }}
+  {{- range $pvc := .Values.additionalMatlabPVCs }}
+    {{- $additionalMatlabRoots = append $additionalMatlabRoots (printf "%s/%s" (include "paths.additionalMatlabDir" .) $pvc) }}
+  {{- end }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: mjs-worker-config
+  name: {{ include "resources.workerConfigMap" . }}
 data:
-  workergroup.config: |
-    {{- .Files.Get "files/workergroup.config" | nindent 4 }}
-{{- end -}}
+  mjs_def.sh: |
+    BASE_PORT={{ .Values.basePort }}
+    CHECKPOINTBASE={{ include "paths.checkpointbase" . }}
+    PIDBASE=/tmp/pid
+    USE_SECURE_COMMUNICATION={{ .Values.useSecureCommunication }}
+    REQUIRE_CLIENT_CERTIFICATE={{ .Values.requireClientCertificate }}
+    REQUIRE_SCRIPT_VERIFICATION={{ .Values.requireScriptVerification }}
+    SECURITY_LEVEL={{ .Values.securityLevel }}
+    SHARED_SECRET_FILE={{ include "paths.secretPath" . }}
+    {{- if .Values.javaPVC }}
+    MJS_JAVA={{ include "paths.javaDir" . }}
+    {{- end }}
+    {{- if .Values.additionalMatlabPVCs }}
+    MJS_ADDITIONAL_MATLABROOTS={{ join ":" $additionalMatlabRoots }}
+    {{- end }}
+
+  worker.sh: |
+    #!/usr/bin/env bash
+    # Script to run on worker pods
+    set -euo pipefail
+
+    # Set up the mjs_def file
+    cp {{ printf "%s/mjs_def.sh" (include "paths.configDir" .) }} {{ $localMJSDef }}
+    LOGBASE={{ include "paths.logbase" . }}/${WORKER_NAME}
+    SCRIPTLOGFILE=${LOGBASE}/script-log.log
+    echo "LOGBASE=${LOGBASE}" >> {{ $localMJSDef }}
+    echo "HOSTNAME=${HOSTNAME}" >> {{ $localMJSDef }}
+
+    # Ensure log directory exists and is writeable by workers
+    if [ ! -d "${LOGBASE}" ]; then
+      mkdir -p "${LOGBASE}"
+    fi
+    chmod o+w "${LOGBASE}"
+
+    # Create a user to run MATLAB as
+    useradd --create-home {{ .Values.workerUsername }} || echo "User {{ .Values.workerUsername }} already exists"
+    echo {{ printf "%s:%s" .Values.workerUsername .Values.workerPassword }} | chpasswd
+
+    # Set ulimit to a reasonable value
+    ulimit -n {{ .Values.fileDescriptorUlimit | default 4096 }}
+
+    # Start the MJS service
+    {{ printf "%s/mjs" $binDir }} start -mjsdef {{ $localMJSDef }} -loglevel {{ .Values.logLevel }} -disablereliableconnections 2>&1 | tee -a ${SCRIPTLOGFILE}
+
+    # Start the worker
+    {{- $workerCmd := printf "%s/startworker -jobmanager \"%s\" -jobmanagerhost \"%s\" -name \"${WORKER_NAME}\" -baseport %d -scriptlogfile ${SCRIPTLOGFILE}" $binDir .Values.jobManagerName (include "resources.jobManager" .) (.Values.basePort | int) }}
+    {{- if .Values.requireScriptVerification }}
+      {{- $workerCmd = printf "%s -secretfile \"%s\"" $workerCmd (include "paths.secretPath" .) }}
+    {{- end }}
+    echo "$(date) | Running startworker command: {{ $workerCmd }}" | tee -a ${SCRIPTLOGFILE}
+    {{ $workerCmd }} 2>&1 | tee -a ${SCRIPTLOGFILE}
+
+    # Add a file to indicate that startworker is complete
+    touch {{ $startFile }}
+
+    # Keep the container running until the worker stops
+    echo "$(date) | Started worker. Will keep container running until stop file appears." | tee -a ${SCRIPTLOGFILE}
+    while [ ! -f {{ $stopFile | quote }} ]; do
+      sleep 1
+    done
+    echo "$(date) | Found stop file, terminating container." | tee -a ${SCRIPTLOGFILE}
+
+  stopWorker.sh: |
+    #!/usr/bin/env bash
+    # Script to gracefully shut down a worker
+    set -euo pipefail
+
+    # First, wait for startworker to have finished successfully
+    SCRIPTLOGFILE=${LOGBASE}/script-log.log
+    echo "$(date) | Waiting for startworker to have finished before cleanly stopping worker." | tee -a ${SCRIPTLOGFILE}
+    while [ ! -f {{ $startFile | quote }} ]; do
+      sleep 1
+    done
+
+    # Stop the worker
+    {{- $stopCmd := printf "%s/stopworker -clean -name \"${WORKER_NAME}\" -baseport %d -scriptlogfile ${SCRIPTLOGFILE}" $binDir (.Values.basePort | int) }}
+    {{- if .Values.requireScriptVerification }}
+      {{- $stopCmd = printf "%s -secretfile \"%s\"" $stopCmd (include "paths.secretPath" .) }}
+    {{- end }}
+    {{ $stopCmd }} 2>&1 | tee -a ${SCRIPTLOGFILE}
+
+    # Trigger the container to exit
+    echo "$(date) | Stopped worker. Touching stop file so main container process can exit." | tee -a ${SCRIPTLOGFILE}
+    touch {{ $stopFile }}

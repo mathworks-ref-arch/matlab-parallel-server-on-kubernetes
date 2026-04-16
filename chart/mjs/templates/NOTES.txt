@@ -1,0 +1,29 @@
+{{- /* Copyright 2025-2026 The MathWorks, Inc. */}}
+{{- $downloadProfileDesc := "Download the cluster profile:" }}
+{{- if eq (include "derived.proxyMode" .) "backwards-compatible-mode" }}
+  {{- $downloadProfileDesc := "Download the cluster profile for MATLAB clients of version R2026a or later:" }}
+{{- end }}
+****************************************************************************
+You have installed the MATLAB® Job Scheduler Helm chart.
+Check the status of the MATLAB Job Scheduler pods:
+
+  kubectl get pods --namespace {{ .Release.Namespace }}
+
+When all pods display 1/1 in the READY field, MATLAB Job Scheduler is ready.
+{{ $downloadProfileDesc }}
+
+  kubectl get secrets {{ include "resources.profileSecret" . }} \
+    --template={{ printf "{{.data.%s | base64decode}}" (include "resources.profileKey" .) | quote }} \
+    --namespace {{ .Release.Namespace }} > profile.json
+{{- if eq (include "derived.proxyMode" .) "backwards-compatible-mode" }}
+
+Download the cluster profile for MATLAB clients older than R2026a:
+
+  kubectl get secrets {{ include "resources.profileSecretPre26a" . }} \
+    --template={{ printf "{{.data.%s | base64decode}}" (include "resources.profileKey" .) | quote }} \
+    --namespace {{ .Release.Namespace }} > profile-pre26a.json
+{{- end }}
+
+For details on how to use the cluster profile in MATLAB, visit
+https://github.com/mathworks-ref-arch/matlab-parallel-server-on-kubernetes
+****************************************************************************

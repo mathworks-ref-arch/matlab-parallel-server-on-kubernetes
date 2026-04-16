@@ -25,6 +25,7 @@ Before you start, you need the following:
 - Helm&reg; version 3.8.0 or later installed on your computer. For help with installing Helm, see [Quickstart Guide](https://helm.sh/docs/intro/quickstart/).
 - Network access to the MathWorks Container Registry, `containers.mathworks.com`, and the GitHub&reg; Container registry, `ghcr.io`.
 - A MATLAB Parallel Server license. For more information on licensing, see [Determining License Size for MATLAB Parallel Server](https://www.mathworks.com/products/matlab-parallel-server/license-model.html) on the MathWorks website.
+- If you use a network license manager, it must use FlexNet Version 11.19.7 or later. To download the latest license manager, visit the Mathworks [License Manager Download](https://www.mathworks.com/support/install/license_manager_files.html) page.
 
 If you do not have a license, submit a request on the MathWorks [Contact Sales](https://www.mathworks.com/company/aboutus/contact_us/contact_sales.html) page.
 
@@ -195,7 +196,7 @@ You must store the cluster profile securely and distribute the cluster profile t
 
 ## Connect to MATLAB Job Scheduler in Kubernetes
 
-To connect to MATLAB Job Scheduler and run MATLAB Parallel Server jobs, open MATLAB using the same version you used for MATLAB Job Scheduler.
+To connect to MATLAB Job Scheduler and run MATLAB Parallel Server jobs, open MATLAB using the same release you used for MATLAB Job Scheduler.
 
 Import the cluster profile.
 1. On your MATLAB desktop, select **Parallel > Create and Manage Clusters**.
@@ -289,6 +290,63 @@ For details on the node storage requirements, see [Requirements](#requirements).
 If your nodes do not have enough ephemeral storage, either
 - Replace your Kubernetes nodes with nodes that have more storage.
 - Instead of pulling the MATLAB Parallel Server Docker image, mount MATLAB Parallel Server from a PersistentVolume. To learn more, see [Mount MATLAB from a PersistentVolume](#mount-matlab-from-a-persistentvolume).
+
+## Upgrade Helm Chart
+
+You can change the MATLAB Job Scheduler configuration parameters or upgrade to a newer version of the Helm chart using the `helm upgrade` command.
+For more details, see [Helm Upgrade](https://helm.sh/docs/helm/helm_upgrade/) on the Helm website.
+
+Upgrading while jobs are running can interrupt jobs.
+Before upgrading, pause the job manager to make sure no new jobs are scheduled.
+Using the `kubectl` command, get the job manager pod name.
+```
+kubectl get pods -l app=mjs-job-manager -o jsonpath="{.items[0].metadata.name}" --namespace mjs
+```
+
+After retrieving the job manager pod name, pause the job manager running on the pod.
+For example, if the job manager name is `MJS_Kubernetes` and the pod name is `pod-name`, run this code to pause the job manager.
+```
+kubectl exec pod-name --namespace mjs -- /opt/matlab/toolbox/parallel/bin/pausejobmanager -name "MJS_Kubernetes"
+```
+
+Wait for the cluster to be idle before upgrading to avoid losing work.
+Check the status of the job manager on pod `pod-name`:
+```
+kubectl exec pod-name --namespace mjs -- /opt/matlab/toolbox/parallel/bin/util/queuestatus
+```
+When the output shows `"runningJobs":[]`, there are no longer any running jobs and you can safely upgrade without interrupting jobs.
+
+To modify a configuration parameter in the Helm chart, either modify your `values.yaml` file to adjust the parameter or use the `--set` command-line flag.
+For example, to upgrade to the latest version of the Helm chart and set the `maxWorkers` parameter to 64, run this command.
+```
+helm upgrade mjs oci://ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs --reuse-values --set maxWorkers=64 --namespace mjs
+```
+
+Check for pod readiness as described in [Install Helm Chart](#install-helm-chart). When the pods are ready, resume the job manager.
+
+```
+kubectl exec pod-name --namespace mjs -- /opt/matlab/toolbox/parallel/bin/resumejobmanager -name "MJS_Kubernetes"
+```
+
+If you modified configuration parameters that affect communication between the MATLAB client and the cluster (for example, the `requireClientCertificate` parameter), follow the instructions in [Download Cluster Profile](#download-cluster-profile) to download the latest profile.
+Otherwise, you can keep using your existing cluster profile.
+You may need to recreate the cluster object from your profile as described in [Examples](#examples).
+
+### Upgrade MATLAB release
+
+You can upgrade your Helm chart to a new MATLAB release number by modifying the `matlabRelease` parameter.
+The upgraded cluster does not have access to jobs from the previous release cluster.
+If you want to access results data after upgrading, you must download the results of any existing jobs before you upgrade.
+
+For example, download the outputs of the first job on your cluster in MATLAB using your cluster profile `<name>`.
+```
+c = parcluster("<name>");
+j = c.Jobs(1);
+outputs = fetchOutputs(j);
+save("job1_outputs.mat", "outputs");
+```
+
+After upgrading, you can access jobs for the older release by setting the `matlabRelease` parameter to its original value and then downgrading the cluster by running the `helm upgrade` command again.
 
 ## Uninstall MATLAB Job Scheduler
 
@@ -420,21 +478,41 @@ For details on creating the PersistentVolumeClaim, see the [Create Persistent Vo
 Modify your `values.yaml` file to set the `matlabPVC` parameter to the name of your PersistentVolumeClaim before installing the Helm chart.
 The worker pods will now use the image URI specified in the `matlabDepsImage` parameter instead of the `matlabImage` parameter.
 
-### Run Multiple MATLAB Parallel Server Versions
+### Run Multiple MATLAB Parallel Server Releases
 
-You can use multiple versions of MATLAB Parallel Server in a single MATLAB Job Scheduler cluster.
+You can use multiple releases of MATLAB Parallel Server in a single MATLAB Job Scheduler cluster.
 When you upgrade to a newer release of MATLAB Parallel Server on your cluster, users can continue to submit jobs from both newer and older releases of the MATLAB client.
-The additional MATLAB Parallel Server versions you use must be version R2024a or newer and must be older than the version of MATLAB Job Scheduler you are using.
+The additional MATLAB Parallel Server releases you use must be release R2024a or newer and must be older than the release of MATLAB Job Scheduler you are using.
 
-Create a PersistentVolume and PersistentVolumeClaim for each additional MATLAB Parallel Server installation you want to use.
+You must specify the releases you want to support in addition to the release of the MATLAB Job Scheduler.
+In addition you must create and specify a PersistentVolume and PersistentVolumeClaim for each additional MATLAB Parallel Server installation you want to use.
 The root directory of each PersistentVolume must be the MATLAB root folder.
-Modify your `values.yaml` file to set the `additionalMatlabPVCs` parameter to the names of the PersistentVolumeClaims.
+Modify your `values.yaml` file to set the `additionalSupportedReleases` parameter to a list of MATLAB releases and to set the `additionalMatlabPVCs` parameter to the names of the PersistentVolumeClaims.
 
-For example, to use an additional PersistentVolumeClaim `matlab-r2024a-pvc`, add the following line to your `values.yaml` file:
+For example, if you want to support R2024a in addition to R2024b when using MATLAB Job Scheduler release R2024b, and `matlab-r2024a-pvc` is the additional PersistentVolumeClaim for R2024a, add the following lines to your `values.yaml` file:
+
 ```
-additionalMatlabPVCs:
-- matlab-r2024a-pvc
+additionalMatlabPVCs: ["matlab-r2024a-pvc"]
+additionalSupportedReleases: ["r2024a"]
 ```
+
+MATLAB client releases earlier than R2026a connect to the cluster using a different proxy technology than R2026a and later.
+Information about the proxy technology is stored in the cluster profile.
+If your cluster only supports releases earlier than R2026a or only releases R2026a and later, the Helm chart creates a single profile.
+If your cluster supports both releases earlier than R2026a and releases R2026a and later, the Helm chart creates two profiles.
+You must download both profiles and distribute the correct one to users based on their MATLAB release.
+
+Download the cluster profile for use with MATLAB clients release R2026a or newer from the `mjs-cluster-profile` secret to a file, for example named `profile.json`:
+```
+kubectl get secrets mjs-cluster-profile --template="{{.data.profile | base64decode}}" --namespace mjs > profile.json
+```
+
+Download the cluster profile for use with MATLAB clients earlier than release R2026a from the `mjs-pre26a-cluster-profile` secret to a differently named file, for example `pre26a-profile.json`:
+```
+kubectl get secrets mjs-pre26a-cluster-profile --template="{{.data.profile | base64decode}}" --namespace mjs > pre26a-profile.json
+```
+
+For more information about how to use cluster profiles to connect to the cluster, see [Download Cluster Profile](#download-cluster-profile) and [Connect to MATLAB Job Scheduler in Kubernetes](#connect-to-matlab-job-scheduler-in-kubernetes).
 
 ### Configure LDAP over SSL
 
@@ -504,46 +582,21 @@ kubectl get secrets mjs-metrics-client-certs --template="{{.data.prometheus.key 
 MATLAB Job Scheduler in Kubernetes uses a Kubernetes load balancer service to expose MATLAB Job Scheduler to MATLAB clients running outside of the Kubernetes cluster.
 By default, the Helm chart creates the load balancer for you.
 You can customize the annotations on the Kubernetes load balancer service by setting the `loadBalancerAnnotations` parameter in your `values.yaml` file.
+
 You can also create and customize your own load balancer service before you install the Helm chart.
-
-Create a Kubernetes load balancer service `mjs-ingress-proxy` to expose MATLAB Job Scheduler to MATLAB clients running outside of the Kubernetes cluster.
-This service needs to open the following ports:
-- `basePort + 6` and `basePort + 9`, where `basePort` is the MATLAB Job Scheduler base port (default 27350). The MATLAB client connects to the MATLAB Job Scheduler job manager through these ports.
-- All ports in range `poolProxyBasePort` to `poolProxyBasePort + maxNumPoolProxies - 1`, where `poolProxyBasePort` is the pool proxy base port (default 30000). Calculate `maxNumPoolProxies` by dividing the maximum number of workers in your cluster by the number of workers per pool proxy (default 32) and rounding up to the nearest integer. The MATLAB client connects to workers in interactive parallel pools through these ports.
-
-For example, for a MATLAB Job Scheduler cluster with the default base port (27350), default pool proxy base port (30000) and a maximum size of 64 workers, the maximum number of pool proxies is 2.
-To create a load balancer for a cluster with this port configuration, create a YAML file, `load-balancer.yaml`, and copy the following lines.
-<!-- BEGIN LOAD BALANCER EXAMPLE -->
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: mjs-ingress-proxy
-spec:
-  type: LoadBalancer
-  selector:
-    app: mjs-ingress-proxy
-  ports:
-  - name: job-manager-27356
-    port: 27356
-    targetPort: 27356
-    protocol: TCP
-  - name: job-manager-27359
-    port: 27359
-    targetPort: 27359
-    protocol: TCP
-  - name: pool-proxy-30000
-    port: 30000
-    targetPort: 30000
-    protocol: TCP
-  - name: pool-proxy-30001
-    port: 30001
-    targetPort: 30001
-    protocol: TCP
+To prevent the Helm chart from automatically creating the load balancer, set the `autoCreateLoadBalancer` parameter in your `values.yaml` file to `false`.
+To define your own load balancer, render the load balancer template and modify the resulting file as needed.
+This code uses the cluster parameters in your Helm values file to render the load balancer template file `load-balancer.yaml` file.
+Modify the value of the `--values` argument, which in this example is `values.yaml`, to specify the location of your `values.yaml` file.
 ```
-<!-- END LOAD BALANCER EXAMPLE -->
+helm template mjs oci://ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs -s templates/ingress-proxy-service.yaml --values values.yaml --set autoCreateLoadBalancer=true > load-balancer.yaml
+```
 
-Modify the file to add annotations if needed.
+Modify the file `load-balancer.yaml` as needed.
+Do not change the load balancer service's name or remove any of the exposed ports.
+If you change the service type to something other than `LoadBalancer`, you must specify a custom cluster hostname by setting the `clusterHost` parameter in your `values.yaml` file.
+For example, if you use a `NodePort` service type, set `clusterHost` to the IP address or DNS name of one of your Kubernetes cluster nodes.
+
 Create the load balancer.
 ```
 kubectl apply -f load-balancer.yaml --namespace mjs
@@ -561,7 +614,7 @@ NAME                TYPE           CLUSTER-IP      EXTERNAL-IP     PORT(S)
 mjs-ingress-proxy   LoadBalancer   10.233.55.51    192.168.1.200   27356:31186/TCP,27359:30272/TCP,30000:30576/TCP,30001:32290/TCP
 ```
 
-You must ensure that the output of the `kubectl get services` command displays an IP address or hostname under the `EXTERNAL-IP` column before you continue.
+You must ensure that the output of the `kubectl get services` command displays an IP address or hostname under the `EXTERNAL-IP` column before you continue, unless you specified the custom `clusterHost` parameter.
 If you do not see an external IP address, wait for some time, then run the same command again.
 
 If you still do not see an external IP address, make sure your Kubernetes cluster is configured to create external load balancers.
@@ -581,4 +634,4 @@ To request assistance or additional features, contact [MathWorks Technical Suppo
 
 ---
 
-Copyright 2024-2025 The MathWorks, Inc.
+Copyright 2024-2026 The MathWorks, Inc.

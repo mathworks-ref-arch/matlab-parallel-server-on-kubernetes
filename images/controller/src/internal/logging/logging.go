@@ -19,7 +19,7 @@ type Logger struct {
 
 // Gracefully close a logger
 func (l *Logger) Close() {
-	err := l.Logger.Sync()
+	err := l.Sync()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error syncing logger: %v\n", err)
 	}
@@ -28,7 +28,7 @@ func (l *Logger) Close() {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error syncing log file: %v\n", err)
 		}
-		l.logFile.Close()
+		l.logFile.Close() //nolint:errcheck // Nothing we can do with this error since logger is gone
 	}
 }
 

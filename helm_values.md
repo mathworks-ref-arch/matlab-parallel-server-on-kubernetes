@@ -6,7 +6,8 @@ If you do not include a parameter in your YAML file, your configuration uses the
 <!-- BEGIN HELM VALUES TABLE -->
 **Parameter**                         | **Description** | **Default Value**
 --------------------------------------|-----------------|-------------------
-`additionalMatlabPVCs`                | Names of PersistentVolumeClaims containing installations of older MATLAB Parallel Server releases, specified as an array. | `[]`
+`additionalMatlabPVCs`                | List of PersistentVolumeClaims containing installations of older MATLAB Parallel Server releases, specified as an array of strings. | `[]`
+`additionalSupportedReleases`         | List of older MATLAB releases this cluster supports, specified as an array of strings. For example, if the cluster supports release R2024a and R2025b, specify `additionalSupportedReleases` as `["r2024a","r2024b"]`. The `additionalMatlabPVCs` parameter must be set to an array of nameas of PersistentVolumeClaims containing a MATLAB installation for each supported release. | `[]`
 `additionalWorkerPVCs`                | Additional PersistentVolumeClaims to mount on worker pods, specifed as a map of claim names to the paths at which those claims should be mounted on the pods. For example, to mount a claim `my-pvc` at path `/shared/data` on the pods, set this parameter to  `{"my-pvc":"/shared/data"}`. | `{}`
 `adminUser`                           | Username of the cluster administrator. | `admin`
 `autoCreateLoadBalancer`              | Flag to automatically create a Kubernetes load balancer to expose MATLAB Job Scheduler to MATLAB clients outside the cluster. See the [Customize Load Balancer](README.md#customize-load-balancer) section for instructions to create your own load balancer. | `true`
@@ -22,12 +23,12 @@ If you do not include a parameter in your YAML file, your configuration uses the
 `controllerMemoryLimit`               | Memory limit for the MATLAB Job Scheduler controller pod. | &mdash;
 `controllerMemoryRequest`             | Memory request for the MATLAB Job Scheduler controller pod. | `128Mi`
 `exportMetrics`                       | Flag to export cluster monitoring metrics from the job manager. | `false`
-`haproxyCPULimit`                     | CPU limit for the HAproxy pod. | &mdash;
-`haproxyCPURequest`                   | CPU request for the HAproxy pod. | `100m`
-`haproxyImage`                        | URI of the [HAproxy Docker image](https://hub.docker.com/_/haproxy/), which is used to proxy incoming traffic. Set this value if you want to use a privately hosted version of this image. | `haproxy`
-`haproxyImagePullPolicy`              | Pull policy for the HAproxy image. | `IfNotPresent`
-`haproxyMemoryLimit`                  | Memory limit for the HAproxy pod. | &mdash;
-`haproxyMemoryRequest`                | Memory request for the HAproxy pod. | `256Mi`
+`haproxyCPULimit`                     | CPU limit for the HAproxy pod. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. | &mdash;
+`haproxyCPURequest`                   | CPU request for the HAproxy pod. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. | `100m`
+`haproxyImage`                        | URI of the [HAproxy Docker image](https://hub.docker.com/_/haproxy/), which is used to proxy incoming traffic. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. Set this value if you want to use a privately hosted version of this image. | `haproxy:3.3`
+`haproxyImagePullPolicy`              | Pull policy for the HAproxy image. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. | `IfNotPresent`
+`haproxyMemoryLimit`                  | Memory limit for the HAproxy pod. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. | &mdash;
+`haproxyMemoryRequest`                | Memory request for the HAproxy pod. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. | `256Mi`
 `idleStop`                            | Time in seconds after which idle worker pods are removed. | `300`
 `internalClientsOnly`                 | Flag to allow only MATLAB clients running inside the Kubernetes cluster to connect to the MATLAB Job Scheduler. | `false`
 `jobManagerCPULimit`                  | CPU limit for the job manager pod. | &mdash;
@@ -37,7 +38,7 @@ If you do not include a parameter in your YAML file, your configuration uses the
 `jobManagerImagePullPolicy`           | Pull policy for the job manager image. | `IfNotPresent`
 `jobManagerImageTag`                  | Tag of the image to use for the job manager image. If you do not set this value, the Helm chart uses the `matlabRelease` parameter as the tag. | &mdash;
 `jobManagerMemoryLimit`               | Memory limit for the job manager pod. | &mdash;
-`jobManagerMemoryRequest`             | Memory request for the job manager pod. | `4Gi`
+`jobManagerMemoryRequest`             | Memory request for the job manager pod. The default value is suitable for clusters with up to 1000 workers. For larger clusters, add `1Gi` for every additional 1000 workers. | `2Gi`
 `jobManagerName`                      | Name of the MATLAB Job Scheduler job manager. | `MJS_Kubernetes`
 `jobManagerNodeSelector`              | Node selector for the job manager pod, specified as key-value pairs that match the labels of the Kubernetes nodes you want to run the job manager on. For example, to run the job manager on nodes with label `node-type=jobmanager`, set this parameter to `{"node-type":"jobmanager"}`. You must assign the appropriate labels to your nodes before you can use the `nodeSelector` feature. For more information, see [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node) on the Kubernetes website. | `{}`
 `jobManagerTolerations`               | Tolerations for the job manager pod, specified as a list of Kubernetes toleration objects. For example, to tolerate the `node-type=job-manager` taint, set this parameter to `[{"key":"node-type","operator":"Equal","value":"job-manager","effect":"NoSchedule"}]`. For more information, see [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/) on the Kubernetes website. | `[]`
@@ -47,6 +48,7 @@ If you do not include a parameter in your YAML file, your configuration uses the
 `ldapSynchronizationIntervalSecs`     | Frequency at which the cluster synchronizes with the LDAP server. | `1800`
 `ldapURL`                             | URL of an LDAP server to authenticate user credentials. If you are using LDAP over SSL (LDAPS) to encrypt communication between the LDAP server and clients, follow the instructions to [configure LDAP over SSL](README.md#configure-ldap-over-ssl). | &mdash;
 `loadBalancerAnnotations`             | Annotations to use for the load balancer service, specified as key-value pairs. | `{}`
+`loadBalancerSourceRanges`            | List of CIDR blocks to which traffic into the load balancer service is restricted if the load balancer is managed by a cloud provider, specified as an array of strings. If not specified, the load balancer allows traffic from all source IP addresses. | `[]`
 `logLevel`                            | Verbosity level of MATLAB Job Scheduler logging. | `0`
 `logPVC`                              | Name of the PersistentVolumeClaim that is bound to the PersistentVolume used to retain job manager logs. | &mdash;
 `matlabDepsImage`                     | URI of the MATLAB dependencies image to use for the MATLAB Job Scheduler worker pods if the MATLAB Parallel Server installation is mounted from a PersistentVolume. The worker pods only use this image if the `matlabPVC` parameter is set. The worker pods use the `matlabImageTag` parameter as the image tag. | `mathworks/matlab-deps`
@@ -54,20 +56,29 @@ If you do not include a parameter in your YAML file, your configuration uses the
 `matlabImagePullPolicy`               | Pull policy for the worker image. | `IfNotPresent`
 `matlabImageTag`                      | Tag of the image to use for the worker image. If you do not set this value, the Helm chart uses the `matlabRelease` parameter as the tag. | &mdash;
 `matlabPVC`                           | Name of the PersistentVolumeClaim that is bound to the PersistentVolume with a MATLAB Parallel Server installation. Set this option only if you did not build a Docker image containing a MATLAB Parallel Server installation. | &mdash;
-`matlabRelease`                       | Release number of the MATLAB version to use. | `r2024a`
+`matlabRelease`                       | Release number of the MATLAB version to use, specified with a lowercase `r`. For example, to use MATLAB release R2024a, set this parameter to `r2024a`. | &mdash;
 `maxWorkers`                          | Maximum number of workers that the cluster can automatically resize to. | &mdash;
 `metricsPort`                         | Port for exporting cluster monitoring metrics. The job manager uses an HTTP(S) server at the port you specify to export metrics. | `8001`
 `minWorkers`                          | Minimum number of workers to run in the cluster. | `0`
 `networkLicenseManager`               | Address of a network license manager with format `port@host`. | &mdash;
+`numGPUs`                             | Number of NVIDIA&reg; GPUs to use on each worker pod. Your Kubernetes cluster must be configured to use NVIDIA GPUs in order to use this setting. For more information on configuring GPUs on a Kubernetes cluster, see [Schedule GPUs](https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/) on the Kubernetes website. | `0`
 `openMetricsPortOutsideKubernetes`    | Flag to expose the cluster monitoring metrics server outside of the Kubernetes cluster. | `false`
-`poolProxyBasePort`                   | Base port for the parallel pool proxy pods. | `30000`
-`poolProxyCPULimit`                   | CPU limit for each parallel pool proxy pod. | &mdash;
-`poolProxyCPURequest`                 | CPU request for each parallel pool proxy pod. | `0.5`
-`poolProxyImage`                      | URI of the image to use for pods that proxy connections in interactive parallel pools. Set this value if you want to use a privately hosted version of this image rather than the version hosted by MathWorks. | `containers.mathworks.com/matlab-parallel-server-k8s/parallel-server-proxy-image`
-`poolProxyImagePullPolicy`            | Pull policy for the pool proxy image. | `IfNotPresent`
-`poolProxyImageTag`                   | Tag of the image to use for the pool proxy. If you do not set this value, the Helm chart uses the `matlabRelease` parameter as the tag. | &mdash;
-`poolProxyMemoryLimit`                | Memory limit for each parallel pool proxy pod. | &mdash;
-`poolProxyMemoryRequest`              | Memory request for each parallel pool proxy pod. | `500Mi`
+`parallelServerProxyCPULimit`         | CPU limit for the MATLAB Parallel Server proxy pod. Your configuration uses this parameter only if the cluster supports MATLAB release R2026a or later. | &mdash;
+`parallelServerProxyCPURequest`       | CPU request for the MATLAB Parallel Server proxy pod. Your configuration uses this parameter only if the cluster supports MATLAB release R2026a or later. | `100m`
+`parallelServerProxyImage`            | URI of the image to use for the MATLAB Parallel Server proxy, which is used to proxy incoming traffic. Your configuration uses this parameter only if the cluster supports MATLAB release R2026a or later. | `ghcr.io/mathworks/parallel-server-proxy:v1.0.0`
+`parallelServerProxyImagePullPolicy`  | Pull policy for the MATLAB Parallel Server proxy image. Your configuration uses this parameter only if the cluster supports MATLAB release R2026a or later. | `IfNotPresent`
+`parallelServerProxyMemoryLimit`      | Memory limit for each MATLAB Parallel Server proxy pod. Your configuration uses this parameter only if the cluster supports MATLAB release R2026a or later. | &mdash;
+`parallelServerProxyMemoryRequest`    | Memory request for each MATLAB Parallel Server proxy pod. Your configuration uses this parameter only if the cluster supports MATLAB release R2026a or later. | `256Mi`
+`parallelServerProxyPort`             | Port to use for the MATLAB Parallel Server proxy. Your configuration uses this parameter only if the cluster supports MATLAB release R2026a or later. | `1080`
+`parallelServerProxyUseMutualTLS`     | If true, the MATLAB Parallel Server proxy uses mutual TLS to authenticate the MATLAB client. Your configuration uses this parameter only if the cluster supports MATLAB release R2026a or later. | `true`
+`poolProxyBasePort`                   | Base port for the parallel pool proxy pods. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. | `30000`
+`poolProxyCPULimit`                   | CPU limit for each parallel pool proxy pod. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. | &mdash;
+`poolProxyCPURequest`                 | CPU request for each parallel pool proxy pod. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. | `0.5`
+`poolProxyImage`                      | URI of the image to use for pods that proxy connections in interactive parallel pools. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. Set this value if you want to use a privately hosted version of this image rather than the version hosted by MathWorks. | `containers.mathworks.com/matlab-parallel-server-k8s/parallel-server-proxy-image`
+`poolProxyImagePullPolicy`            | Pull policy for the pool proxy image. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. | `IfNotPresent`
+`poolProxyImageTag`                   | Tag of the image to use for the pool proxy. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. If you do not set this value, the Helm chart uses the `matlabRelease` parameter as the tag. | &mdash;
+`poolProxyMemoryLimit`                | Memory limit for each parallel pool proxy pod. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. | &mdash;
+`poolProxyMemoryRequest`              | Memory request for each parallel pool proxy pod. Your configuration uses this parameter only if the cluster supports MATLAB releases older than R2026a. | `500Mi`
 `requireClientCertificate`            | Flag that requires MATLAB clients to have a certificate to connect to the job manager. | `true`
 `requireScriptVerification`           | Flag that requires verification to run privileged commands on the cluster. | `true`
 `securityLevel`                       | MATLAB Job Scheduler security level. | `2`
@@ -86,3 +97,7 @@ If you do not include a parameter in your YAML file, your configuration uses the
 `workerUsername`                      | Username that MATLAB Parallel Server uses to run jobs. | `matlab`
 `workersPerPoolProxy`                 | Maximum number of workers using each parallel pool proxy. | `32`
 <!-- END HELM VALUES TABLE -->
+
+---
+
+Copyright 2024-2025 The MathWorks, Inc.

@@ -41,7 +41,7 @@ func TestLoggerStdout(t *testing.T) {
 	require.NoError(t, err, "Error creating logger without a log file")
 	require.NotNil(t, logCloser.Logger, "Zap logger should not be nil")
 	require.Nil(t, logCloser.logFile, "Log file should be nil for logger without an output file")
-	logCloser.Logger.Info("test message")
+	logCloser.Info("test message")
 	logCloser.Close()
 }
 

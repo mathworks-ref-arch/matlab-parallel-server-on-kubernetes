@@ -1,756 +1,360 @@
-// Copyright 2024-2025 The MathWorks, Inc.
-package specs
+// Copyright 2024-2026 The MathWorks, Inc.
+package specs_test
 
 import (
 	"controller/internal/config"
-	"encoding/json"
+	"controller/internal/logging"
+	"controller/internal/resize"
+	"controller/internal/specs"
+	mocks "controller/mocks/specs"
 	"fmt"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Test the creation and use of a SpecFactory
-func TestGetWorkerDeploymentSpec(t *testing.T) {
-	testCases := []struct {
-		name                   string
-		usePoolProxy           bool
-		useSecureCommunication bool
-	}{
-		{"no_proxy_no_secure", false, false},
-		{"proxy_no_secure", true, false},
-		{"no_proxy_secure", false, true},
-		{"proxy_secure", true, true},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			ownerUID := types.UID("abcd1234")
-			conf := createTestConfig()
-			conf.InternalClientsOnly = !tc.usePoolProxy
-			conf.UseSecureCommunication = tc.useSecureCommunication
-			conf.WorkerNodeSelector = map[string]string{"node-type": "worker"}
+const (
+	certVolume          = "cert-vol"
+	logDir              = "/test/log"
+	poolProxyBasePort   = 4000
+	poolProxyPrefix     = "my-proxy-"
+	workerDomain        = "test.domain"
+	workersPerPoolProxy = 3
+	workerPrefix        = "my-worker-"
+)
 
-			// Create a SpecFactory
-			specFactory, err := NewSpecFactory(conf, ownerUID)
-			require.NoError(t, err)
-			assert.NotNil(t, specFactory)
-			assert.Equal(t, conf, specFactory.config)
-
-			// Verify the specs it creates
-			verifyWorkerSpecs(t, specFactory, conf, ownerUID)
-			verifyProxySpecs(t, specFactory, conf, ownerUID)
-		})
-	}
+var testKeys = config.AnnotationKeys{
+	CertVolume:             "test/certvol",
+	LogDir:                 "test/logdir",
+	PoolProxyBasePort:      "test/ppbase",
+	PoolProxyID:            "test/ppid",
+	PoolProxyPrefix:        "test/ppprefix",
+	WorkerDomain:           "test/domain",
+	WorkerID:               "test/wid",
+	WorkerName:             "test/wname",
+	WorkerPrefix:           "test/wprefix",
+	WorkersPerPoolProxy:    "test/wppp",
+	TemplateChecksum:       "test/templatechk",
+	UseSecureCommunication: "test/usc",
+	UsePoolProxy:           "test/upp",
 }
 
-// Test the calculate of which proxy to use for each worker
-func TestCalculateProxyForWorker(t *testing.T) {
-	conf := &config.Config{
-		WorkersPerPoolProxy: 10,
-	}
-	specFactory, err := NewSpecFactory(conf, "abcd")
-	require.NoError(t, err)
-	assert.Equal(t, 1, specFactory.CalculatePoolProxyForWorker(1))
-	assert.Equal(t, 1, specFactory.CalculatePoolProxyForWorker(10))
-	assert.Equal(t, 2, specFactory.CalculatePoolProxyForWorker(11))
+func TestWorkerSpec(t *testing.T) {
+	template := getWorkerPodTemplate(false, false)
+	workerID := 5
+	spec, checksum := getWorkerPodSpecFromTemplate(t, template, workerID)
+
+	// Test properties
+	expectedWorkerName := fmt.Sprintf("%s%d", workerPrefix, workerID)
+	podName := spec.Name
+	expectedHost := podName + "." + workerDomain
+	assert.NotEqual(t, expectedWorkerName, podName, "Pod should have been generated a unique name")
+	assert.Contains(t, podName, expectedWorkerName, "Generated pod name should contain worker name")
+	assert.Equal(t, fmt.Sprintf("%d", workerID), spec.Labels[testKeys.WorkerID], "Pod should have worker ID label")
+	assert.Equal(t, fmt.Sprintf("%d", workerID), spec.Annotations[testKeys.WorkerID], "Pod should have worker ID annotation")
+	assert.Equal(t, expectedWorkerName, spec.Labels[testKeys.WorkerName], "Pod should have worker name label")
+	assert.Equal(t, expectedWorkerName, spec.Annotations[testKeys.WorkerName], "Pod should have worker name annotation")
+
+	// Test pod properties
+	assert.Equal(t, spec.Name, spec.Spec.Hostname, "Pod hostname should match pod name")
+	verifyPodBasedOnTemplate(t, spec.Spec, spec.ObjectMeta, template)
+	verifyTemplateAnnotation(t, spec.ObjectMeta, checksum)
+
+	// Test container properties
+	container := &spec.Spec.Containers[0]
+	verifyEnvVar(t, container, "WORKER_NAME", expectedWorkerName)
+	verifyEnvVar(t, container, "HOSTNAME", expectedHost)
+	verifyEnvVar(t, container, "MDCE_OVERRIDE_INTERNAL_HOSTNAME", expectedHost)
+	verifyEnvVar(t, container, "MDCE_OVERRIDE_EXTERNAL_HOSTNAME", expectedHost)
+
+	// Check we did not set pool proxy env vars
+	verifyEnvUnset(t, container, "PARALLEL_SERVER_POOL_PROXY_HOST")
+	verifyEnvUnset(t, container, "PARALLEL_SERVER_POOL_PROXY_PORT")
+	assert.Empty(t, spec.Spec.Volumes, "There should be no volumes added when not using a pool proxy")
+	assert.Empty(t, spec.Annotations[testKeys.PoolProxyID], "Pod should not be labelled with a pool proxy ID when pool proxies are not needed")
 }
 
-// Test generation of unique hostnames for workers
-func TestGenerateUniqueHostname(t *testing.T) {
-	assert := assert.New(t)
+// Check multiple deployment specs for the same worker ID have unique names
+func TestUniqueHostnames(t *testing.T) {
+	checksum := "test"
+	sf := newSpecFactory(t, getWorkerPodTemplate(false, false), nil, checksum)
 
-	worker1 := WorkerInfo{
-		Name: "myworker",
-		ID:   10,
-	}
-	assert.Empty(worker1.HostName, "Worker hostname should initially be empty")
+	workerID := 11
+	spec1 := getWorkerPodSpec(t, sf, workerID)
+	spec2 := getWorkerPodSpec(t, sf, workerID)
 
-	worker1.GenerateUniqueHostName()
-	assert.NotEmpty(worker1.HostName, "Worker hostname should be filled after GenerateUniqueHostName")
-	assert.Contains(worker1.HostName, worker1.Name, "Worker hostname should contain worker name")
-
-	// Check that a second worker with the same name gets a unique host name
-	worker2 := WorkerInfo{
-		Name: worker1.Name,
-		ID:   worker1.ID,
-	}
-	worker2.GenerateUniqueHostName()
-	assert.NotEmpty(worker2.HostName, "Worker hostname should be filled after GenerateUniqueHostName")
-	assert.NotEqual(worker1.HostName, worker2.HostName, "Worker hostnames should be unique")
+	assert.NotEqual(t, spec1.Name, spec2.Name, "Multiple pod specs for same worker ID should have unique names")
+	assert.Equal(t, spec1.Annotations[testKeys.WorkerID], spec2.Annotations[testKeys.WorkerID], "Worker ID annotations should match")
+	assert.Equal(t, spec1.Annotations[testKeys.WorkerName], spec2.Annotations[testKeys.WorkerName], "Worker name annotations should match")
 }
 
-// Check that all of the allowed MPI ports are exposed by the worker service (g3221764)
-func TestMPIPorts(t *testing.T) {
-	ownerUID := types.UID("abcd1234")
-	conf := createTestConfig()
-	conf.BasePort = 30000
-	specFactory, err := NewSpecFactory(conf, ownerUID)
-	require.NoError(t, err)
+func TestWorkerSpecWithPoolProxy(t *testing.T) {
+	template := getWorkerPodTemplate(true, false)
+	workerID := 20
+	spec, checksum := getWorkerPodSpecFromTemplate(t, template, workerID)
 
-	worker := WorkerInfo{
-		Name:     "worker",
-		ID:       5,
-		HostName: "test",
-	}
-	deployment := specFactory.GetWorkerDeploymentSpec(&worker)
-	service := specFactory.GetWorkerServiceSpec(&worker)
+	// Test pod properties
+	verifyPodBasedOnTemplate(t, spec.Spec, spec.ObjectMeta, template)
+	verifyTemplateAnnotation(t, spec.ObjectMeta, checksum)
+	assert.Empty(t, spec.Spec.Volumes, "There should be no volumes added when UseSecureCommunication is false")
 
-	// Check that the MPI port range environment variable is set on the worker
-	expectedEnvVar := "MPICH_PORT_RANGE"
-	gotEnv := deployment.Spec.Template.Spec.Containers[0].Env
-	found := false
-	var gotVal string
-	for _, e := range gotEnv {
-		if e.Name == expectedEnvVar {
-			found = true
-			gotVal = e.Value
-			break
-		}
-	}
-	assert.Truef(t, found, "Worker environment variable %s should be set", expectedEnvVar)
+	// Test container environment
+	container := &spec.Spec.Containers[0]
+	expectedProxyID := specs.CalculateProxyIDForWorker(workerID, workersPerPoolProxy)
+	expectedProxyPort := poolProxyBasePort + expectedProxyID - 1
+	verifyEnvVar(t, container, "PARALLEL_SERVER_POOL_PROXY_HOST", fmt.Sprintf("%s%d", poolProxyPrefix, expectedProxyID))
+	verifyEnvVar(t, container, "PARALLEL_SERVER_POOL_PROXY_PORT", fmt.Sprintf("%d", expectedProxyPort))
 
-	// Extract the ports from the environment variable
-	ports := strings.Split(gotVal, ":")
-	assert.Lenf(t, ports, 2, "%s should have format minPort:maxPort", expectedEnvVar)
-	minPort, err := strconv.Atoi(ports[0])
-	assert.NoErrorf(t, err, "Failed to convert min MPI port '%s' to an int", ports[0])
-	maxPort, err := strconv.Atoi(ports[1])
-	assert.NoErrorf(t, err, "Failed to convert max MPI port '%s' to an int", ports[1])
-
-	// Check the port numbers
-	assert.Equal(t, conf.BasePort+1000, minPort, "Unexpected minimum MPI port")
-	assert.Equal(t, minPort+mpiPortsPerWorker-1, maxPort, "Unexpected maximum MPI port")
-
-	// Check that each port was exposed on the worker service
-	exposedPorts := map[int]bool{}
-	for _, p := range service.Spec.Ports {
-		exposedPorts[int(p.Port)] = true
-	}
-	for p := minPort; p <= maxPort; p++ {
-		assert.Contains(t, exposedPorts, minPort, "MPI port should be exposed by the worker service")
-	}
-
-	// Ensure the pod's hostname matches the service name
-	assert.Equal(t, service.Name, deployment.Spec.Template.Spec.Hostname, "Worker pod hostname must match the service name in order for MPI to work")
+	assert.Equal(t, fmt.Sprintf("%d", expectedProxyID), spec.Annotations[testKeys.PoolProxyID], "Spec should be annotated with the ID of the proxy the worker should use")
 }
 
-func TestGetJobManagerSpecs(t *testing.T) {
-	testCases := []struct {
-		name                   string
-		useSecureCommunication bool
-		useMatlabPVC           bool
-	}{
-		{"insecure", false, false},
-		{"secure_communication", true, false},
-		{"with_matlab_pvc", false, true},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(tt *testing.T) {
-			ownerUID := types.UID("abcd1234")
-			conf := createTestConfig()
-			conf.UseSecureCommunication = tc.useSecureCommunication
-			conf.JobManagerUID = "jm123"
-			conf.JobManagerUsesPVC = tc.useMatlabPVC
-			conf.JobManagerNodeSelector = map[string]string{"node-type": "jobmanager"}
+func TestWorkerSpecWithPoolProxySecureCommunication(t *testing.T) {
+	template := getWorkerPodTemplate(true, true)
+	workerID := 6
+	spec, _ := getWorkerPodSpecFromTemplate(t, template, workerID)
 
-			// Create a SpecFactory
-			specFactory, err := NewSpecFactory(conf, ownerUID)
-			require.NoError(t, err)
-			assert.NotNil(tt, specFactory)
-			assert.Equal(tt, conf, specFactory.config)
-
-			// Verify the job manager spec it creates
-			verifyJobManagerSpec(tt, specFactory, conf, ownerUID)
-		})
-	}
+	// Check a volume was created for the proxy certificate secret
+	expectedProxyID := specs.CalculateProxyIDForWorker(workerID, workersPerPoolProxy)
+	verifyPoolProxyVolume(t, &spec.Spec, expectedProxyID)
 }
 
-// Test the ability to add custom environment variables to the worker pod spec
-func TestExtraWorkerEnv(t *testing.T) {
-	conf := createTestConfig()
-	extraEnv := map[string]string{
-		"MY_VAR1":     "test",
-		"ANOTHER_VAR": "test2",
-	}
-	conf.ExtraWorkerEnvironment = extraEnv
+func TestPoolProxySpec(t *testing.T) {
+	template := getProxyPodTemplate(false)
+	checksum := "abcde"
+	sf := newSpecFactory(t, nil, template, checksum)
+	proxyID := 100
+	spec := getProxyDeploymentSpec(t, sf, proxyID)
 
-	specFactory, err := NewSpecFactory(conf, types.UID("abc"))
-	require.NoError(t, err)
-	workerSpec := specFactory.GetWorkerDeploymentSpec(&WorkerInfo{
-		Name:     "worker1",
-		ID:       1,
-		HostName: "host1",
-	})
-	workerEnv := workerSpec.Spec.Template.Spec.Containers[0].Env
+	// Test deployment properties
+	expectedName := fmt.Sprintf("%s%d", poolProxyPrefix, proxyID)
+	expectedPort := fmt.Sprintf("%d", poolProxyBasePort+proxyID-1)
+	assert.Equal(t, expectedName, spec.Name, "Deployment has unexpected name")
+	assert.Equal(t, fmt.Sprintf("%d", proxyID), spec.Labels[testKeys.PoolProxyID], "Deployment should have proxy ID label")
+	assert.Equal(t, fmt.Sprintf("%d", proxyID), spec.Annotations[testKeys.PoolProxyID], "Deployment should have proxy ID annotation")
+	verifyLabelSelector(t, spec)
 
-	for key, value := range extraEnv {
-		found := false
-		var gotValue string
-		for _, item := range workerEnv {
-			if item.Name == key {
-				found = true
-				gotValue = item.Value
-				break
-			}
-		}
-		assert.Truef(t, found, "Custom worker environment variable %s not found", key)
-		assert.Equalf(t, value, gotValue, "Unexpected value for worker environment variable %s", key)
-	}
-}
+	// Test pod properties
+	pod := spec.Spec.Template
+	verifyPodBasedOnTemplate(t, pod.Spec, pod.ObjectMeta, template)
+	verifyTemplateAnnotation(t, spec.ObjectMeta, checksum)
 
-func TestAdditionalMatlabRoots(t *testing.T) {
-	testCases := []struct {
-		name                          string
-		matlabPVCs                    []string
-		expectedAdditionalMatlabRoots string
-	}{
-		{"no_additional", []string{}, ""},
-		{"single_additional", []string{"my-extra-pvc"}, "/opt/additionalmatlab/my-extra-pvc"},
-		{"multiple_additional", []string{"matlab24a", "matlab24b", "matlab25a"}, "/opt/additionalmatlab/matlab24a:/opt/additionalmatlab/matlab24b:/opt/additionalmatlab/matlab25a"},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(tt *testing.T) {
-			conf := createTestConfig()
-			conf.AdditionalMatlabPVCs = tc.matlabPVCs
-			specFactory, err := NewSpecFactory(conf, types.UID("abc"))
-			require.NoError(t, err)
-			workerSpec := specFactory.GetWorkerDeploymentSpec(&WorkerInfo{
-				Name:     "worker1",
-				ID:       1,
-				HostName: "host1",
-			})
-			verifyAdditionalMatlabPVCs(tt, workerSpec, tc.matlabPVCs, tc.expectedAdditionalMatlabRoots)
-		})
-	}
-}
-
-// Verify that if AdditionalWorkerPVCs is set, the extra PVCs get mounted onto the worker pods
-func TestAdditionalWorkerPVCs(t *testing.T) {
-	pvcMap := map[string]string{
-		"my-pvc-1": "/tmp/pvc",
-		"my-pvc-2": "/mnt/shared",
-	}
-	conf := createTestConfig()
-	conf.AdditionalWorkerPVCs = pvcMap
-	specFactory, err := NewSpecFactory(conf, types.UID("abc"))
-	require.NoError(t, err)
-	workerSpec := specFactory.GetWorkerDeploymentSpec(&WorkerInfo{
-		Name:     "worker1",
-		ID:       1,
-		HostName: "host1",
-	})
-	for pvc, path := range pvcMap {
-		verifyPVCMountedOnPod(t, &workerSpec.Spec.Template.Spec, pvc, path)
-	}
-}
-
-// Check whether the LDAP certificate is mounted or not mounted based on the value of LDAPCertPath
-func TestMountLDAPCert(t *testing.T) {
-	testCases := []struct {
-		name              string
-		ldapCertDir       string
-		certFile          string
-		expectMountedCert bool
-	}{
-		{"no_ldap_cert", "", "", false},
-		{"ldap_cert", "/mount/dir", "my-cert.pem", true},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(tt *testing.T) {
-			ownerUID := types.UID("abcd1234")
-			conf := createTestConfig()
-			conf.LDAPCertPath = filepath.Join(tc.ldapCertDir, tc.certFile)
-
-			// Create a job manager spec
-			specFactory, err := NewSpecFactory(conf, ownerUID)
-			require.NoError(t, err)
-			require.NotNil(tt, specFactory)
-			require.Equal(tt, conf, specFactory.config)
-			spec := specFactory.GetJobManagerDeploymentSpec()
-
-			// Check for the LDAP volume
-			pod := spec.Spec.Template.Spec
-			if tc.expectMountedCert {
-				vol, volMount := verifyPodHasVolume(tt, &pod, ldapCertVolumeName)
-				assert.NotNil(tt, vol.VolumeSource.Secret, "LDAP certificate volume should be a secret volume")
-				assert.Equal(tt, LDAPSecretName, vol.VolumeSource.Secret.SecretName, "LDAP volume should use LDAP secret name")
-				assert.Equal(tt, tc.ldapCertDir, volMount.MountPath, "LDAP volume should be mounted at LDAP mount path")
-			} else {
-				verifyPodDoesNotHaveVolume(tt, &pod, ldapCertVolumeName)
-			}
-		})
-	}
-}
-
-// Check whether the metrics secret is mounted or not
-func TestMountMetricsSecret(t *testing.T) {
-	const metricsDir = "/test/metrics"
-	testCases := []struct {
-		name             string
-		useSecureMetrics bool
-	}{
-		{"insecure_metrics", false},
-		{"secure_metrics", true},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(tt *testing.T) {
-			ownerUID := types.UID("abcd1234")
-			conf := createTestConfig()
-			conf.UseSecureMetrics = tc.useSecureMetrics
-			conf.MetricsCertDir = metricsDir
-
-			// Create a job manager spec
-			specFactory, err := NewSpecFactory(conf, ownerUID)
-			require.NoError(t, err)
-			require.NotNil(tt, specFactory)
-			require.Equal(tt, conf, specFactory.config)
-			spec := specFactory.GetJobManagerDeploymentSpec()
-
-			// Check for the metrics secret volume
-			pod := spec.Spec.Template.Spec
-			if tc.useSecureMetrics {
-				vol, volMount := verifyPodHasVolume(tt, &pod, metricsCertVolumeName)
-				assert.NotNil(tt, vol.VolumeSource.Secret, "LDAP certificate volume should be a secret volume")
-				assert.Equal(tt, MetricsSecretName, vol.VolumeSource.Secret.SecretName, "Metrics volume should use metrics secret name")
-				assert.Equal(tt, metricsDir, volMount.MountPath, "Metrics volume should be mounted at metrics certificate mount path")
-			} else {
-				verifyPodDoesNotHaveVolume(tt, &pod, metricsCertVolumeName)
-			}
-		})
-	}
-}
-
-func TestGetSecretSpec(t *testing.T) {
-	ownerUID := types.UID("abcd1234")
-	testCases := []struct {
-		name            string
-		preserveSecrets bool
-	}{
-		{"preserve_secrets", true},
-		{"no_preserve_secrets", false},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(tt *testing.T) {
-			conf := createTestConfig()
-			conf.PreserveSecrets = tc.preserveSecrets
-			specFactory, err := NewSpecFactory(conf, ownerUID)
-			require.NoError(t, err)
-
-			secretName := "my-secret"
-			secret := specFactory.GetSecretSpec(secretName, tc.preserveSecrets)
-			require.NotNil(tt, secret, "Secret should not be nil")
-			assert.Equal(tt, secret.ObjectMeta.Name, secretName, "Unexpected secret name")
-
-			if tc.preserveSecrets {
-				assert.Empty(tt, secret.ObjectMeta.OwnerReferences, "Secret should not have owner reference when preserve=true")
-			} else {
-				assert.Equal(tt, secret.ObjectMeta.OwnerReferences[0].UID, ownerUID, "Secret should have owner reference when preserve=false")
-			}
-		})
-	}
-}
-
-// Test the use of tolerations
-func TestTolerations(t *testing.T) {
-	ownerUID := types.UID("abcd1234")
-	conf := createTestConfig()
-
-	workerTols := []corev1.Toleration{
-		{
-			Key:      "worker-tol1",
-			Operator: "Exists",
-			Effect:   "NoSchedule",
-			Value:    "my-tol",
-		},
-		{
-			Key:      "jm-tol1",
-			Operator: "Exists",
-			Effect:   "NoSchedule",
-			Value:    "another-tol",
-		},
-	}
-	jobManagerTols := []corev1.Toleration{
-		{
-			Key:      "jm-tol",
-			Operator: "Exists",
-			Effect:   "NoSchedule",
-			Value:    "jm-tol",
-		},
-	}
-
-	// Pass the tolerations as a string
-	workerTolsString, err := json.Marshal(workerTols)
-	require.NoError(t, err)
-	jobManagerTolsString, err := json.Marshal(jobManagerTols)
-	require.NoError(t, err)
-	conf.WorkerTolerations = string(workerTolsString)
-	conf.JobManagerTolerations = string(jobManagerTolsString)
-
-	// Create a SpecFactory
-	specFactory, err := NewSpecFactory(conf, ownerUID)
-	require.NoError(t, err)
-	assert.NotNil(t, specFactory)
-	assert.Equal(t, conf, specFactory.config)
-
-	// Verify the job manager spec
-	jmSpec := specFactory.GetJobManagerDeploymentSpec()
-	assert.Equal(t, jobManagerTols, jmSpec.Spec.Template.Spec.Tolerations, "Job manager tolerations do not match")
-
-	// Verify the worker spec
-	workerSpec := specFactory.GetWorkerDeploymentSpec(&WorkerInfo{
-		Name:     "test-with-tols",
-		ID:       1,
-		HostName: "localhost",
-	})
-	assert.Equal(t, workerTols, workerSpec.Spec.Template.Spec.Tolerations, "Worker tolerations do not match")
-}
-
-// Check we get an error if we pass an invalid string
-func TestTolerationsError(t *testing.T) {
-	ownerUID := types.UID("abcd1234")
-	conf := createTestConfig()
-
-	// Check error when the worker tolerations are invalid
-	conf.WorkerTolerations = "invalid-json"
-	conf.JobManagerTolerations = ""
-	_, err := NewSpecFactory(conf, ownerUID)
-	assert.Error(t, err, "Expected error when worker tolerations are invalid")
-
-	// Check error when the job manager tolerations are invalid
-	conf.JobManagerTolerations = "invalid-json"
-	conf.WorkerTolerations = ""
-	_, err = NewSpecFactory(conf, ownerUID)
-	assert.Error(t, err, "Expected error when job manager tolerations are invalid")
-}
-
-func verifyWorkerSpecs(t *testing.T, specFactory *SpecFactory, conf *config.Config, ownerUID types.UID) {
-	assert := assert.New(t)
-	testWorker := &WorkerInfo{
-		Name:     "worker1",
-		ID:       3,
-		HostName: "my-worker-host",
-	}
-
-	// Create a worker deployment
-	deployment := specFactory.GetWorkerDeploymentSpec(testWorker)
-	assert.NotNil(deployment)
-
-	// Check basic properties
-	verifyDeployment(t, deployment, ownerUID)
-	assert.Equalf(WorkerLabels.AppLabel, deployment.Labels[AppKey], "Missing deployment label")
-	assert.Equal(testWorker.HostName, deployment.ObjectMeta.Name, "Deployment name should match worker hostname")
-
-	// Check the underlying pod spec
-	pod := deployment.Spec.Template.Spec
-	assert.Len(pod.Containers, 1, "Worker pod should have 1 container")
-	container := pod.Containers[0]
-	assert.Equal(conf.WorkerImage, container.Image, "Worker container has incorrect image")
-	assert.Equal(conf.WorkerImagePullPolicy, string(container.ImagePullPolicy), "Worker container has incorrect image pull policy")
-	assert.Equal(conf.WorkerCPULimit, container.Resources.Limits.Cpu().String(), "Worker container has incorrect CPU limit")
-	assert.Equal(conf.WorkerCPURequest, container.Resources.Requests.Cpu().String(), "Worker container has incorrect CPU request")
-	assert.Equal(conf.WorkerMemoryLimit, container.Resources.Limits.Memory().String(), "Worker container has incorrect memory limit")
-	assert.Equal(conf.WorkerMemoryRequest, container.Resources.Requests.Memory().String(), "Worker container has incorrect memory request")
-	assert.Contains(container.Args[0], conf.MJSDefDir, "Worker container arg should point to worker script under the mjs_def mount directory")
-	assert.NotNil(container.Lifecycle.PreStop, "Worker container should have pre-stop hook set")
-	assert.Equal(int64(0), *pod.SecurityContext.RunAsUser, "Worker pod should run as root")
-	verifyEnableServiceLinksFalse(t, &pod)
-
-	// Check volumes
-	verifyPodHasVolume(t, &pod, mjsDefVolumeName)
-	if conf.UseSecureCommunication {
-		verifyPodHasVolume(t, &pod, secretVolumeName)
-	} else {
-		verifyPodDoesNotHaveVolume(t, &pod, secretVolumeName)
-	}
-	if conf.UsePoolProxy() && conf.UseSecureCommunication {
-		verifyPodHasVolume(t, &pod, proxyCertVolumeName)
-	} else {
-		verifyPodDoesNotHaveVolume(t, &pod, proxyCertVolumeName)
-	}
-	verifyPodHasVolume(t, &pod, matlabVolumeName)
-
-	// Check environment
-	verifyEnvVar(t, &pod, "MLM_LICENSE_FILE", conf.NetworkLicenseManager)
-	verifyEnvVar(t, &pod, "MJS_WORKER_USERNAME", conf.WorkerUsername)
-	verifyEnvVar(t, &pod, "MJS_WORKER_PASSWORD", conf.WorkerPassword)
-	verifyEnvVar(t, &pod, "USER", conf.WorkerUsername) // USER should be set (g3299166)
-	verifyEnvVar(t, &pod, "SHELL", "/bin/sh")
-	verifyEnvVar(t, &pod, "WORKER_NAME", testWorker.Name)
-	verifyEnvVar(t, &pod, "HOSTNAME", testWorker.HostName)
-	verifyEnvVar(t, &pod, "MDCE_OVERRIDE_INTERNAL_HOSTNAME", testWorker.HostName)
-	if conf.UsePoolProxy() {
-		// Make sure the proxy environment variables are set
-		proxyID := specFactory.CalculatePoolProxyForWorker(testWorker.ID)
-		proxy := NewPoolProxyInfo(proxyID, conf.PoolProxyBasePort)
-		verifyEnvVar(t, &pod, "PARALLEL_SERVER_POOL_PROXY_PORT", fmt.Sprintf("%d", proxy.Port))
-		verifyEnvVar(t, &pod, "PARALLEL_SERVER_POOL_PROXY_HOST", proxy.Name)
-		verifyEnvVar(t, &pod, "PARALLEL_SERVER_POOL_PROXY_EXTERNAL_HOST", "$CLIENT_OVERRIDE")
-
-		// Check the proxy certificate variable; this should only be set if USE_SECURE_COMMUNICATION=true
-		if conf.UseSecureCommunication {
-			verifyEnvVar(t, &pod, "PARALLEL_SERVER_POOL_PROXY_CERTIFICATE", filepath.Join(proxyCertDir, ProxyCertFileName))
-		} else {
-			verifyEnvUnset(t, &pod, "PARALLEL_SERVER_POOL_PROXY_CERTIFICATE")
-		}
-
-		// Make sure the port range override is not set; this is only needed for the many-ports configuration
-		verifyEnvUnset(t, &pod, "PARALLEL_SERVER_OVERRIDE_PORT_RANGE")
-	} else {
-		// Make sure none of the proxy environment variables are set
-		verifyEnvUnset(t, &pod, "PARALLEL_SERVER_POOL_PROXY_PORT")
-		verifyEnvUnset(t, &pod, "PARALLEL_SERVER_POOL_PROXY_HOST")
-		verifyEnvUnset(t, &pod, "PARALLEL_SERVER_POOL_PROXY_EXTERNAL_HOST")
-		verifyEnvUnset(t, &pod, "PARALLEL_SERVER_POOL_PROXY_CERTIFICATE")
-
-		// Check we are using the full DNS name of the service for internal clients
-		expectedHostname := specFactory.GetServiceHostname(testWorker.HostName)
-		verifyEnvVar(t, &pod, "MDCE_OVERRIDE_EXTERNAL_HOSTNAME", expectedHostname)
-	}
-
-	// Check node selector
-	assert.Equal(pod.NodeSelector, conf.WorkerNodeSelector, "Worker pod node selector should match config")
-
-	// Create a service spec for the same worker
-	svc := specFactory.GetWorkerServiceSpec(testWorker)
-	assert.Equal(deployment.Spec.Template.ObjectMeta.Labels, svc.Spec.Selector, "Service selector should match worker pod's labels")
-	ownerRefs := svc.ObjectMeta.OwnerReferences
-	assert.Len(ownerRefs, 1, "Service should have 1 owner reference")
-	assert.Equal(ownerUID, ownerRefs[0].UID, "Service has incorrect owner UID")
-
-	// Check ports
-	minPort, maxPort := specFactory.CalculateWorkerPorts()
-	for p := minPort; p <= maxPort; p++ {
-		assert.Truef(serviceHasPort(svc, p), "Worker parpool port %d missing from service", p)
-	}
-}
-
-func verifyProxySpecs(t *testing.T, specFactory *SpecFactory, conf *config.Config, ownerUID types.UID) {
-	assert := assert.New(t)
-	testProxy := &PoolProxyInfo{
-		Name: "myproxy",
-		ID:   10,
-		Port: 40000,
-	}
-
-	// Create proxy deployment spec
-	deployment := specFactory.GetPoolProxyDeploymentSpec(testProxy)
-	verifyDeployment(t, deployment, ownerUID)
-	assert.Equal(testProxy.Name, deployment.ObjectMeta.Name, "Deployment name should match proxy name")
-
-	// Check the pod has the label used to match it to the corresponding service created in the Helm template
-	assert.Equal(testProxy.Name, deployment.Spec.Template.ObjectMeta.Labels[PoolProxyLabels.Name], "Proxy pod spec is missing the label required to match it to its corresponding service")
-
-	// Check resource limits/requests
-	assert.Len(deployment.Spec.Template.Spec.Containers, 1, "Proxy pod should have one container")
-	container := deployment.Spec.Template.Spec.Containers[0]
-	assert.Equal(conf.PoolProxyCPULimit, container.Resources.Limits.Cpu().String(), "Proxy container has incorrect CPU limit")
-	assert.Equal(conf.PoolProxyCPURequest, container.Resources.Requests.Cpu().String(), "Proxy container has incorrect CPU request")
-	assert.Equal(conf.PoolProxyMemoryLimit, container.Resources.Limits.Memory().String(), "Proxy container has incorrect memory limit")
-	assert.Equal(conf.PoolProxyMemoryRequest, container.Resources.Requests.Memory().String(), "Proxy container has incorrect memory request")
-	assert.Equal(conf.PoolProxyImage, container.Image, "Proxy container has unexpected image")
-	assert.Equal(conf.PoolProxyImagePullPolicy, string(container.ImagePullPolicy), "Proxy container has unexpected image pull policy")
-	verifyEnableServiceLinksFalse(t, &deployment.Spec.Template.Spec)
-
-	// Check the proxy input args
+	// Test container properties
+	container := &pod.Spec.Containers[0]
 	args := container.Args
-	assert.Contains(args, fmt.Sprintf("%d", testProxy.Port), "Proxy port should appear in container args")
-	if conf.UseSecureCommunication {
-		assert.Contains(args, "--certificate", "Container args should include --certificate flag when UseSecureCommunication is true")
-	} else {
-		assert.NotContains(args, "--certificate", "Container args should not include --certificate flag when UseSecureCommunication is false")
+	assert.Contains(t, args, "--port", "Args should include the port argument")
+	assert.Contains(t, args, expectedPort, "Args should include the port value")
+	assert.Contains(t, args, "--logfile", "Args should include the logfile argument")
+	assert.Contains(t, args, filepath.Join(logDir, expectedName+".log"), "Args should include the log file path")
+	assert.Empty(t, pod.Spec.Volumes, "There should be no volumes added when not using secure communication")
+	assert.Empty(t, pod.Annotations[testKeys.SecretName], "Pod should not be annotated with proxy secret name when not using secure communication")
+
+	// If we generate a new spec with the same ID, it should be identical
+	spec2 := getProxyDeploymentSpec(t, sf, proxyID)
+	assert.Equal(t, spec, spec2, "Repeated spec generation should produce same spec")
+}
+
+func TestPoolProxySpecSecureCommunication(t *testing.T) {
+	template := getProxyPodTemplate(true)
+	proxyID := 36
+	spec, _ := getProxyDeploymentSpecFromTemplate(t, template, proxyID)
+
+	// Check there is a volume for the proxy certificate secret
+	verifyPoolProxyVolume(t, &spec.Spec.Template.Spec, proxyID)
+
+	assert.Equal(t, fmt.Sprintf("%s%d", poolProxyPrefix, proxyID), spec.Annotations[testKeys.SecretName], "Spec should be annotated with the name of the secret used by this proxy")
+}
+
+func TestCalculateProxyIDForWorker(t *testing.T) {
+	testCases := []struct {
+		workerID        int
+		workersPerProxy int
+		expectedProxyID int
+	}{
+		{workerID: 1, workersPerProxy: 1, expectedProxyID: 1},
+		{workerID: 2, workersPerProxy: 1, expectedProxyID: 2},
+		{workerID: 1, workersPerProxy: 2, expectedProxyID: 1},
+		{workerID: 3, workersPerProxy: 2, expectedProxyID: 2},
+		{workerID: 100, workersPerProxy: 1, expectedProxyID: 100},
+		{workerID: 101, workersPerProxy: 10, expectedProxyID: 11},
 	}
-
-	// Check volumes
-	pod := deployment.Spec.Template.Spec
-	if conf.UseSecureCommunication {
-		verifyPodHasVolume(t, &pod, proxyCertVolumeName)
-	} else {
-		verifyPodDoesNotHaveVolume(t, &pod, proxyCertVolumeName)
+	for _, tc := range testCases {
+		actualProxyID := specs.CalculateProxyIDForWorker(tc.workerID, tc.workersPerProxy)
+		assert.Equalf(t, tc.expectedProxyID, actualProxyID, "Unxpected proxy ID for worker %d with %d workers per proxy", tc.workerID, tc.workersPerProxy)
 	}
-
-	// Check node selector
-	assert.Equal(pod.NodeSelector, conf.WorkerNodeSelector, "Proxy pod should match the worker node selector")
 }
 
-func verifyJobManagerSpec(t *testing.T, specFactory *SpecFactory, conf *config.Config, ownerUID types.UID) {
-	assert := assert.New(t)
-
-	// Create the job manager deployment spec
-	deployment := specFactory.GetJobManagerDeploymentSpec()
-	assert.NotNil(deployment)
-
-	// Check basic properties
-	verifyDeployment(t, deployment, ownerUID)
-	assert.Equal(JobManagerHostname, deployment.Labels[AppKey], "Deployment should have the job manager app label")
-	assert.Equal(conf.JobManagerUID, deployment.Labels[JobManagerUIDKey], "Deployment should have the job manager UID label")
-	assert.Equal(JobManagerHostname, deployment.ObjectMeta.Name, "Deployment should have job manager name")
-
-	// Check the underlying pod spec
-	pod := deployment.Spec.Template.Spec
-	assert.Len(pod.Containers, 1, "Job manager pod should have 1 container")
-	container := pod.Containers[0]
-	assert.Equal(conf.JobManagerImage, container.Image, "Job manager container has incorrect image")
-	assert.Equal(conf.JobManagerImagePullPolicy, string(container.ImagePullPolicy), "Job manager container has incorrect image pull policy")
-	assert.Equal(conf.JobManagerCPULimit, container.Resources.Limits.Cpu().String(), "Job manager container has incorrect CPU limit")
-	assert.Equal(conf.JobManagerCPURequest, container.Resources.Requests.Cpu().String(), "Job manager container has incorrect CPU request")
-	assert.Equal(conf.JobManagerMemoryLimit, container.Resources.Limits.Memory().String(), "Job manager container has incorrect memory limit")
-	assert.Equal(conf.JobManagerMemoryRequest, container.Resources.Requests.Memory().String(), "Job manager container has incorrect memory request")
-	assert.Contains(container.Command[1], conf.MJSDefDir, "Job manager container arg should point to job manager script under the mjs_def mount directory")
-	assert.NotNil(container.Lifecycle.PreStop, "Job manager container should have pre-stop hook set")
-	assert.NotNil(container.LivenessProbe, "Job manager container should have liveness probe")
-	assert.NotNil(container.StartupProbe, "Job manager container should have startup probe")
-	assert.Equal(int64(conf.JobManagerUserID), *pod.SecurityContext.RunAsUser, "Job manager pod should run as job manager user UID")
-	assert.Equal(int64(conf.JobManagerGroupID), *pod.SecurityContext.RunAsGroup, "Job manager pod should run as job manager group UID")
-	verifyEnableServiceLinksFalse(t, &pod)
-
-	// Check volumes
-	verifyPodHasVolume(t, &pod, mjsDefVolumeName)
-	verifyPodHasVolume(t, &pod, checkpointVolumeName)
-	if conf.UseSecureCommunication {
-		verifyPodHasVolume(t, &pod, secretVolumeName)
-	} else {
-		verifyPodDoesNotHaveVolume(t, &pod, secretVolumeName)
+func TestMissingWorkerAnnotations(t *testing.T) {
+	requiredLabels := []string{
+		testKeys.LogDir,
+		testKeys.UsePoolProxy,
+		testKeys.WorkerDomain,
+		testKeys.WorkerPrefix,
 	}
+	for _, label := range requiredLabels {
+		t.Run(label, func(tt *testing.T) {
+			annotations := getRequiredWorkerAnnotations(false, false)
+			delete(annotations, label)
+			tmpl := getEmptyPodTemplate(annotations)
 
-	// MATLAB volume should only be mounted if JobManagerUsesPVC=true
-	if conf.JobManagerUsesPVC {
-		verifyPodHasVolume(t, &pod, matlabVolumeName)
-	} else {
-		verifyPodDoesNotHaveVolume(t, &pod, matlabVolumeName)
+			sf := newSpecFactory(tt, tmpl, nil, "test")
+			_, err := sf.GetWorkerPodSpec(1)
+			require.Error(tt, err, "Expected error when required label is missing")
+			assert.Contains(tt, err.Error(), label, "Error message should mention missing label")
+		})
 	}
-
-	// Check node selector
-	assert.Equal(pod.NodeSelector, conf.JobManagerNodeSelector, "Job manager pod should match the job manager node selector")
 }
 
-// Verify common properties of all created deployment specs
-func verifyDeployment(t *testing.T, deployment *appsv1.Deployment, ownerUID types.UID) {
-	assert := assert.New(t)
-	assert.Equal(int32(1), *deployment.Spec.Replicas, "Deployment should have 1 replica")
-	assert.Equal(deployment.Spec.Selector.MatchLabels, deployment.Spec.Template.ObjectMeta.Labels, "Deployment selector labels should match template labels")
-	ownerRefs := deployment.ObjectMeta.OwnerReferences
-	assert.Len(ownerRefs, 1, "Deployment should have 1 owner reference")
-	assert.Equal(ownerUID, ownerRefs[0].UID, "Deployment has incorrect owner UID")
-
-	// Verify volumes common to all pods
-	pod := deployment.Spec.Template.Spec
-	verifyPodHasVolume(t, &pod, logVolumeName)
-}
-
-func verifyPodHasVolume(t *testing.T, pod *corev1.PodSpec, volumeName string) (*corev1.Volume, *corev1.VolumeMount) {
-	vol, hasVol := podHasVolume(pod, volumeName)
-	assert.Truef(t, hasVol, "Volume %s not found in pod spec", volumeName)
-	volMount, hasMount := podHasVolumeMount(pod, volumeName)
-	assert.Truef(t, hasMount, "Volume mount %s not found in container spec", volumeName)
-	return vol, volMount
-}
-
-func verifyPVCMountedOnPod(t *testing.T, pod *corev1.PodSpec, pvcName, mountPath string) {
-	for _, vol := range pod.Volumes {
-		if pvc := vol.VolumeSource.PersistentVolumeClaim; pvc != nil && pvc.ClaimName == pvcName {
-			for _, container := range pod.Containers {
-				for _, mount := range container.VolumeMounts {
-					if mount.Name == vol.Name {
-						assert.Equalf(t, mount.MountPath, mountPath, "Volume mount path for %s does not match expected path", pvcName)
-					}
-				}
-			}
-			return
-		}
+func TestMissingWorkerAnnotationsWithPoolProxy(t *testing.T) {
+	proxyOnlyLabels := []string{
+		testKeys.CertVolume,
+		testKeys.PoolProxyBasePort,
+		testKeys.PoolProxyPrefix,
+		testKeys.UseSecureCommunication,
+		testKeys.WorkersPerPoolProxy,
 	}
-	assert.Failf(t, "Persistent volume claim %s not found on pod", pvcName)
+	for _, label := range proxyOnlyLabels {
+		t.Run(label, func(tt *testing.T) {
+			annotations := getRequiredWorkerAnnotations(false, false)
+			delete(annotations, label)
+			tmpl := getEmptyPodTemplate(annotations)
+			sf := newSpecFactory(tt, tmpl, nil, "test")
+			_, err := sf.GetWorkerPodSpec(1)
+			require.NoError(tt, err, "Should be allowed to omit label when not using pool proxy")
+
+			// Now make sure we require this label when using a pool proxy
+			annotations[testKeys.UsePoolProxy] = "true"
+			tmpl = getEmptyPodTemplate(annotations)
+			sf = newSpecFactory(tt, tmpl, nil, "test")
+			_, err = sf.GetWorkerPodSpec(1)
+			require.Error(tt, err, "Expected error when required label is missing")
+			assert.Contains(tt, err.Error(), label, "Error message should mention missing label")
+		})
+	}
 }
 
-func verifyPodDoesNotHaveVolume(t *testing.T, pod *corev1.PodSpec, volumeName string) {
-	_, hasVol := podHasVolume(pod, volumeName)
-	assert.Falsef(t, hasVol, "Pod spec should not have volume %s", volumeName)
-	_, hasMount := podHasVolumeMount(pod, volumeName)
-	assert.Falsef(t, hasMount, "Container spec should not have volume mount %s", volumeName)
+func TestBadWorkerAnnotations(t *testing.T) {
+	labelsToTest := []string{
+		testKeys.PoolProxyBasePort,
+		testKeys.UsePoolProxy,
+		testKeys.UseSecureCommunication,
+		testKeys.WorkersPerPoolProxy,
+	}
+	for _, label := range labelsToTest {
+		t.Run(label, func(tt *testing.T) {
+			badStr := "jadkfjadslkfj" // Can't be parsed as bool or int
+			annotations := getRequiredWorkerAnnotations(true, true)
+			annotations[label] = badStr
+			tmpl := getEmptyPodTemplate(annotations)
+
+			sf := newSpecFactory(tt, tmpl, nil, "test")
+			_, err := sf.GetWorkerPodSpec(1)
+			require.Error(tt, err, "Expected error when label has invalid value")
+			assert.Contains(tt, err.Error(), label, "Error message should mention bad label")
+			assert.Contains(tt, err.Error(), badStr, "Error message should mention bad value")
+		})
+	}
 }
 
-func verifyEnvUnset(t *testing.T, pod *corev1.PodSpec, varName string) {
-	_, isSet := getPodEnvVar(pod, varName)
-	assert.Falsef(t, isSet, "Pod should not have environment variable %s", varName)
+func TestMissingProxyAnnotations(t *testing.T) {
+	requiredLabels := []string{
+		testKeys.CertVolume,
+		testKeys.LogDir,
+		testKeys.PoolProxyBasePort,
+		testKeys.PoolProxyPrefix,
+		testKeys.UseSecureCommunication,
+	}
+	for _, label := range requiredLabels {
+		t.Run(label, func(tt *testing.T) {
+			annotations := getRequiredPoolProxyAnnotations(true)
+			delete(annotations, label)
+			tmpl := getEmptyPodTemplate(annotations)
+
+			sf := newSpecFactory(tt, nil, tmpl, "test")
+			_, err := sf.GetPoolProxyDeploymentSpec(1)
+			require.Error(tt, err, "Expected error when required label is missing")
+			assert.Contains(tt, err.Error(), label, "Error message should mention missing label")
+		})
+	}
+}
+
+func TestBadProxyAnnotations(t *testing.T) {
+	labelsToTest := []string{
+		testKeys.PoolProxyBasePort,
+		testKeys.UseSecureCommunication,
+	}
+	for _, label := range labelsToTest {
+		t.Run(label, func(tt *testing.T) {
+			badStr := "jadkfjadslkfj" // Can't be parsed as bool or int
+			annotations := getRequiredPoolProxyAnnotations(true)
+			annotations[label] = badStr
+			tmpl := getEmptyPodTemplate(annotations)
+
+			sf := newSpecFactory(tt, nil, tmpl, "test")
+			_, err := sf.GetPoolProxyDeploymentSpec(1)
+			require.Error(tt, err, "Expected error when label has invalid value")
+			assert.Contains(tt, err.Error(), label, "Error message should mention bad label")
+			assert.Contains(tt, err.Error(), badStr, "Error message should mention bad value")
+		})
+	}
+}
+
+func getWorkerPodTemplate(usePoolProxy, useSecureCommunication bool) *corev1.PodTemplateSpec {
+	annotations := getRequiredWorkerAnnotations(usePoolProxy, useSecureCommunication)
+	return getEmptyPodTemplate(annotations)
+}
+
+func getProxyPodTemplate(useSecureCommunication bool) *corev1.PodTemplateSpec {
+	annotations := getRequiredPoolProxyAnnotations(useSecureCommunication)
+	return getEmptyPodTemplate(annotations)
+}
+
+func getEmptyPodTemplate(annotations map[string]string) *corev1.PodTemplateSpec {
+	return &corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				"testlabel": "testval",
+			},
+			Annotations: annotations,
+			Generation:  4,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "template",
+					Image: "template-image",
+					Env: []corev1.EnvVar{
+						{
+							Name:  "test-env",
+							Value: "test-val",
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func verifyEnvUnset(t *testing.T, container *corev1.Container, varName string) {
+	_, isSet := getContainerEnvVar(container, varName)
+	assert.Falsef(t, isSet, "Container should not have environment variable %s", varName)
 }
 
 // Verify that an environment variable is set and has the expected value
-func verifyEnvVar(t *testing.T, pod *corev1.PodSpec, key, value string) {
-	gotValue, isSet := getPodEnvVar(pod, key)
-	assert.Truef(t, isSet, "Pod should have environment variable %s", key)
+func verifyEnvVar(t *testing.T, container *corev1.Container, key, value string) {
+	gotValue, isSet := getContainerEnvVar(container, key)
+	assert.Truef(t, isSet, "Container should have environment variable %s", key)
 	assert.Equalf(t, gotValue, value, "Unexpected value for environment variable %s", key)
 }
 
-// Create a Config object populated with test values
-func createTestConfig() *config.Config {
-	return &config.Config{
-		BasePort:                  20000,
-		CheckpointPVC:             "checkpoint-pvc",
-		EnableServiceLinks:        false,
-		WorkerImagePullPolicy:     "Never",
-		WorkerImage:               "my-matlab-image",
-		JobManagerImagePullPolicy: "IfNotPresent",
-		JobManagerImage:           "my-jm-image",
-		LogBase:                   "/var/logs",
-		LogLevel:                  3,
-		MatlabRoot:                "/opt/matlab",
-		MatlabPVC:                 "matlab-pvc",
-		MJSDefConfigMap:           "mjsdef-cm",
-		MJSDefDir:                 "/def-dir",
-		NetworkLicenseManager:     "20000@mylicensemanager",
-		PortsPerWorker:            3,
-		PoolProxyImage:            "my-proxy",
-		PoolProxyImagePullPolicy:  "Always",
-		PoolProxyBasePort:         40000,
-		PoolProxyCPURequest:       "500m",
-		PoolProxyCPULimit:         "500m",
-		PoolProxyMemoryLimit:      "2Gi",
-		PoolProxyMemoryRequest:    "1Gi",
-		WorkerCPURequest:          "3",
-		WorkerCPULimit:            "4",
-		WorkerMemoryRequest:       "3Gi",
-		WorkerMemoryLimit:         "4Gi",
-		JobManagerCPURequest:      "3",
-		JobManagerCPULimit:        "4",
-		JobManagerMemoryRequest:   "3Gi",
-		JobManagerMemoryLimit:     "4Gi",
-		JobManagerGroupID:         1000,
-		JobManagerUserID:          2000,
-		WorkerLogPVC:              "worker-pvc",
-		LogPVC:                    "log-pvc",
-		WorkerPassword:            "workerpw",
-		WorkersPerPoolProxy:       10,
-		WorkerUsername:            "myuser",
-	}
-}
-
-func podHasVolume(pod *corev1.PodSpec, volumeName string) (*corev1.Volume, bool) {
-	for _, v := range pod.Volumes {
-		if v.Name == volumeName {
-			return &v, true
-		}
-	}
-	return nil, false
-}
-
-func podHasVolumeMount(pod *corev1.PodSpec, volumeName string) (*corev1.VolumeMount, bool) {
-	for _, v := range pod.Containers[0].VolumeMounts {
-		if v.Name == volumeName {
-			return &v, true
-		}
-	}
-	return nil, false
-}
-
-// Return a pod's environment variable value and whether or not it is set
-func getPodEnvVar(pod *corev1.PodSpec, varName string) (string, bool) {
-	for _, e := range pod.Containers[0].Env {
+// Return a containers's environment variable value and whether or not it is set
+func getContainerEnvVar(container *corev1.Container, varName string) (string, bool) {
+	for _, e := range container.Env {
 		if e.Name == varName {
 			return e.Value, true
 		}
@@ -758,37 +362,111 @@ func getPodEnvVar(pod *corev1.PodSpec, varName string) (string, bool) {
 	return "", false
 }
 
-func serviceHasPort(svc *corev1.Service, portNum int) bool {
-	for _, p := range svc.Spec.Ports {
-		if p.Port == int32(portNum) {
-			return true
-		}
+func verifyPodBasedOnTemplate(t *testing.T, pod corev1.PodSpec, podMeta metav1.ObjectMeta, template *corev1.PodTemplateSpec) {
+	assert.Len(t, pod.Containers, len(template.Spec.Containers), "Number of containers should match template")
+
+	// Check pod has all labels from the template
+	for k, v := range template.Labels {
+		assert.Equal(t, v, podMeta.Labels[k], fmt.Sprintf("Pod label %s should match template", k))
 	}
-	return false
+
+	// Check container properties
+	container := pod.Containers[0]
+	templateContainer := template.Spec.Containers[0]
+	assert.Equal(t, templateContainer.Name, container.Name, "Container name should match template")
+	assert.Equal(t, templateContainer.Image, container.Image, "Container image should match template")
+
+	// Check our pod has all environment variables from the template
+	for _, v := range templateContainer.Env {
+		verifyEnvVar(t, &container, v.Name, v.Value)
+	}
+
+	// Check our pod has all args from the template
+	for _, a := range templateContainer.Args {
+		assert.Contains(t, container.Args, a, "Container args should include template args")
+	}
 }
 
-func verifyEnableServiceLinksFalse(t *testing.T, pod *corev1.PodSpec) {
-	assert.Falsef(t, *pod.EnableServiceLinks, "Pod should have EnableServiceLinks set to false")
+func verifyTemplateAnnotation(t *testing.T, objMeta metav1.ObjectMeta, checksum string) {
+	assert.Equal(t, checksum, objMeta.Annotations[testKeys.TemplateChecksum], "Deployment template should be labelled with template checksum")
 }
 
-func verifyAdditionalMatlabPVCs(t *testing.T, spec *appsv1.Deployment, matlabPVCs []string, expectedAdditionalMatlabRoots string) {
-	pod := spec.Spec.Template
-	for _, matlabPVC := range matlabPVCs {
-		found := false
-		for _, vol := range pod.Spec.Volumes {
-			if pvc := vol.VolumeSource.PersistentVolumeClaim; pvc != nil && pvc.ClaimName == matlabPVC {
-				found = true
-				break
-			}
-		}
-		assert.Truef(t, found, "Additional MATLAB volume %s should be mounted on pod %s", matlabPVC, pod.Name)
-	}
+func verifyPoolProxyVolume(t *testing.T, pod *corev1.PodSpec, proxyID int) {
+	volumes := pod.Volumes
+	require.Len(t, volumes, 1, "One volume should be added when UseSecureCommunication and UsePoolProxy are both true")
+	expectedSecretName := fmt.Sprintf("%s%d", poolProxyPrefix, proxyID)
+	vol := volumes[0]
+	assert.Equal(t, certVolume, vol.Name, "Volume name should match configured cert volume name")
+	assert.Equal(t, expectedSecretName, vol.Secret.SecretName, "Volume secret name should match proxy certificate secret name")
+}
 
-	// Check the additional MATLAB root environment variable
-	varName := "MJS_ADDITIONAL_MATLABROOTS"
-	if expectedAdditionalMatlabRoots == "" {
-		verifyEnvUnset(t, &pod.Spec, varName)
-	} else {
-		verifyEnvVar(t, &pod.Spec, varName, expectedAdditionalMatlabRoots)
+func verifyLabelSelector(t *testing.T, dep *appsv1.Deployment) {
+	for k, v := range dep.Spec.Selector.MatchLabels {
+		assert.Equal(t, v, dep.Spec.Template.Labels[k], "Label selector should match pod template labels")
 	}
+}
+
+func newLogger(t *testing.T) *logging.Logger {
+	return logging.NewFromZapLogger(zaptest.NewLogger(t))
+}
+
+// Get the annotations the worker template needs to have
+func getRequiredWorkerAnnotations(usePoolProxy, useSecureCommunication bool) map[string]string {
+	annotations := map[string]string{
+		testKeys.CertVolume:             certVolume,
+		testKeys.LogDir:                 logDir,
+		testKeys.PoolProxyBasePort:      fmt.Sprintf("%d", poolProxyBasePort),
+		testKeys.PoolProxyPrefix:        poolProxyPrefix,
+		testKeys.UsePoolProxy:           fmt.Sprintf("%t", usePoolProxy),
+		testKeys.UseSecureCommunication: fmt.Sprintf("%t", useSecureCommunication),
+		testKeys.WorkerDomain:           workerDomain,
+		testKeys.WorkersPerPoolProxy:    fmt.Sprintf("%d", workersPerPoolProxy),
+		testKeys.WorkerPrefix:           workerPrefix,
+	}
+	if usePoolProxy {
+
+	}
+	return annotations
+}
+
+// Get the annotations the pool proxy template needs to have
+func getRequiredPoolProxyAnnotations(useSecureCommunication bool) map[string]string {
+	return map[string]string{
+		testKeys.CertVolume:             certVolume,
+		testKeys.LogDir:                 logDir,
+		testKeys.PoolProxyBasePort:      fmt.Sprintf("%d", poolProxyBasePort),
+		testKeys.PoolProxyPrefix:        poolProxyPrefix,
+		testKeys.UseSecureCommunication: fmt.Sprintf("%t", useSecureCommunication),
+	}
+}
+
+func newSpecFactory(t *testing.T, workerTmpl, proxyTmpl *corev1.PodTemplateSpec, checksum string) resize.SpecFactory {
+	mockStore := mocks.NewMockTemplateStore(t)
+	mockStore.EXPECT().GetWorkerPodTemplate().Return(workerTmpl, checksum).Maybe()
+	mockStore.EXPECT().GetPoolProxyPodTemplate().Return(proxyTmpl, checksum).Maybe()
+	return specs.NewFactory(testKeys, mockStore, newLogger(t))
+}
+
+func getWorkerPodSpecFromTemplate(t *testing.T, tmpl *corev1.PodTemplateSpec, workerID int) (*corev1.Pod, string) {
+	checksum := "abc"
+	sf := newSpecFactory(t, tmpl, nil, checksum)
+	return getWorkerPodSpec(t, sf, workerID), checksum
+}
+
+func getWorkerPodSpec(t *testing.T, sf resize.SpecFactory, workerID int) *corev1.Pod {
+	spec, err := sf.GetWorkerPodSpec(workerID)
+	require.NoError(t, err, "Failed to get worker pod template")
+	return spec
+}
+
+func getProxyDeploymentSpecFromTemplate(t *testing.T, tmpl *corev1.PodTemplateSpec, proxyID int) (*appsv1.Deployment, string) {
+	checksum := "abcde"
+	sf := newSpecFactory(t, nil, tmpl, checksum)
+	return getProxyDeploymentSpec(t, sf, proxyID), checksum
+}
+
+func getProxyDeploymentSpec(t *testing.T, sf resize.SpecFactory, proxyID int) *appsv1.Deployment {
+	spec, err := sf.GetPoolProxyDeploymentSpec(proxyID)
+	require.NoError(t, err, "Failed to get proxy deployment template")
+	return spec
 }

@@ -7,6 +7,18 @@
         "type": "string"
       }
     },
+    "additionalSupportedReleases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "r2024a",
+          "r2024b",
+          "r2025a",
+          "r2025b"
+        ]
+      }
+    },
     "additionalWorkerPVCs": {
       "type": "object",
       "additionalProperties": {
@@ -29,6 +41,9 @@
       "maximum": 65535
     },
     "checkpointPVC": {
+      "type": "string"
+    },
+    "clusterDomain": {
       "type": "string"
     },
     "clusterHost": {
@@ -94,11 +109,20 @@
     "exportMetrics": {
       "type": "boolean"
     },
+    "extraJobManagerEnv": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
     "extraWorkerEnv": {
       "type": "object",
       "additionalProperties": {
         "type": "string"
       }
+    },
+    "fileDescriptorUlimit": {
+      "type": "number"
     },
     "global": {
       "type": "object"
@@ -160,6 +184,9 @@
     },
     "internalClientsOnly": {
       "type": "boolean"
+    },
+    "javaPVC": {
+      "type": "string"
     },
     "jobManagerCPULimit": {
       "anyOf": [
@@ -258,6 +285,10 @@
       "type": "integer",
       "minimum": 1
     },
+    "livenessProbeInitialDelay": {
+      "type": "integer",
+      "minimum": 1
+    },
     "livenessProbePeriod": {
       "type": "integer",
       "minimum": 1
@@ -268,6 +299,12 @@
     },
     "loadBalancerAnnotations": {
       "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "loadBalancerSourceRanges": {
+      "type": "array",
       "additionalProperties": {
         "type": "string"
       }
@@ -302,11 +339,14 @@
     },
     "matlabRelease": {
       "type": "string",
+      "minLength": 6,
+      "maxLength": 6,
       "enum": [
         "r2024a",
         "r2024b",
         "r2025a",
-        "r2025b"
+        "r2025b",
+        "r2026a"
       ]
     },
     "maxWorkers": {
@@ -324,6 +364,10 @@
     },
     "networkLicenseManager": {
       "type": "string"
+    },
+    "numGPUs": {
+      "type": "integer",
+      "minimum": 0
     },
     "openMetricsPortOutsideKubernetes": {
       "type": "boolean"
@@ -400,6 +444,65 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 2
+    },
+    "parallelServerProxyCPULimit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "parallelServerProxyCPURequest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "parallelServerProxyImage": {
+      "type": "string"
+    },
+    "parallelServerProxyImagePullPolicy": {
+      "type": "string",
+      "enum": [
+        "Always",
+        "Never",
+        "IfNotPresent"
+      ]
+    },
+    "parallelServerProxyMemoryLimit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "parallelServerProxyMemoryRequest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "parallelServerProxyPort": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 65535
+    },
+    "parallelServerProxyUseMutualTLS": {
+      "type": "boolean"
     },
     "startupProbeFailureThreshold": {
       "type": "integer",
@@ -502,7 +605,56 @@
       "type": "string"
     }
   },
+  "allOf": [
+    {
+      "$comment": "If openMetricsPortOutsideKubernetes is true, exportMetrics must also be true",
+      "if": {
+        "required": [
+          "openMetricsPortOutsideKubernetes"
+        ],
+        "properties": {
+          "openMetricsPortOutsideKubernetes": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "exportMetrics"
+        ],
+        "properties": {
+          "exportMetrics": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "$comment": "If internalClientsOnly is true, openMetricsPortOutsideKubernetes must be false",
+      "if": {
+        "required": [
+          "internalClientsOnly"
+        ],
+        "properties": {
+          "internalClientsOnly": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "openMetricsPortOutsideKubernetes"
+        ],
+        "properties": {
+          "openMetricsPortOutsideKubernetes": {
+            "const": false
+          }
+        }
+      }
+    }
+  ],
   "required": [
+    "matlabRelease",
     "maxWorkers",
     "checkpointPVC",
     "logPVC",

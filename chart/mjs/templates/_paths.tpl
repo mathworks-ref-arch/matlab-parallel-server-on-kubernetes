@@ -1,9 +1,14 @@
 # Define paths of files and directories for use in multiple template files.
-# Copyright 2024 The MathWorks, Inc.
+# Copyright 2024-2025 The MathWorks, Inc.
 
 # MATLAB root on containers
 {{- define "paths.matlabroot" -}}
 /opt/matlab
+{{- end -}}
+
+# toolbox/parallel/bin directory on containers
+{{- define "paths.binDir" -}}
+{{ printf "%s/toolbox/parallel/bin" (include "paths.matlabroot" .) }}
 {{- end -}}
 
 # Checkpoint base on containers; all MJS data except the job database is stored here.
@@ -83,12 +88,57 @@ config.json
 haproxy.cfg
 {{- end -}}
 
-# Path to mounted LDAP certificate
+# Path to directory containing mounted LDAP certificate
+{{- define "paths.ldapCertDir" -}}
+/mjs/ldap
+{{- end -}}
+
+# LDAP certificate file
 {{- define "paths.ldapCert" -}}
-/mjs/ldap/cert.pem
+cert.pem
 {{- end -}}
 
 # Path to directory containing mounted metrics certificates
 {{- define "paths.metricsCertDir" -}}
 /mjs/metrics/
+{{- end -}}
+
+# Path to use for mounting a JRE folder
+{{- define "paths.javaDir" -}}
+/usr/local/share/matlab/mjs/java
+{{- end -}}
+
+# Directory to use for parallelserverproxy certificate
+{{- define "paths.proxyCertDir" -}}
+/cert
+{{- end -}}
+
+# Path for mounting additional MATLAB PVCs
+{{- define "paths.additionalMatlabDir" -}}
+/opt/additionalmatlab
+{{- end -}}
+
+# Metrics CA cert
+{{- define "paths.metricsCaCert" -}}
+ca.crt
+{{- end -}}
+
+# Metrics server cert
+{{- define "paths.metricsCert" -}}
+jobmanager.crt
+{{- end -}}
+
+# Metrics server key
+{{- define "paths.metricsKey" -}}
+jobmanager.key
+{{- end -}}
+
+# Metrics client cert
+{{- define "paths.clientMetricsCert" -}}
+prometheus.crt
+{{- end -}}
+
+# Metrics client key
+{{- define "paths.clientMetricsKey" -}}
+prometheus.key
 {{- end -}}

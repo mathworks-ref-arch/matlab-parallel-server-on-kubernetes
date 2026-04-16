@@ -1,0 +1,220 @@
+# Template for MJS worker pods.
+# The pods themselves are not created by the Helm chart, but instead dynamically 
+# created and destroyed on demand by the MJS controller.
+# Copyright 2025-2026 The MathWorks, Inc.
+{{- $workerImageTag := .Values.matlabImageTag | default .Values.matlabRelease }}
+{{- $workerImage := .Values.matlabImage }}
+{{- if not (empty .Values.matlabPVC) }}
+  {{- $workerImage = .Values.matlabDepsImage }}
+{{- end }}
+{{- $name := include "resources.worker" . }}
+{{- $usePoolProxy := eq (include "derived.usePoolProxy" . ) "true" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "resources.workerTemplate" . }}
+data:
+  # Define pod template
+  {{ include "resources.templateFile" . }}: |
+    metadata:
+      labels:
+        app: {{ $name }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/worker-configmap.yaml") . | sha256sum }} # Restart pod if config map changes
+
+        # Settings used to derive configuration for a specific worker pod
+        {{ include "annotations.logDir" . }}: {{ include "paths.logbase" . | quote }}
+        {{ include "annotations.usePoolProxy" . }}: {{ include "derived.usePoolProxy" . | quote }}
+        {{ include "annotations.workerDomain" . }}: {{ printf "%s.%s.svc.%s" (include "resources.workerService" .) .Release.Namespace (include "derived.clusterDomain" .) | quote }}
+        {{ include "annotations.workerPrefix" . }}: {{ include "resources.workerPrefix" . | quote }}
+        {{- if eq (include "derived.usePoolProxy" .) "true" }}
+        {{ include "annotations.certVolume" . }}: {{ include "resources.proxyCertVol" . | quote }}
+        {{ include "annotations.poolProxyBasePort" . }}: {{ .Values.poolProxyBasePort  | quote }}
+        {{ include "annotations.poolProxyPrefix" . }}: {{ include "resources.poolProxyPrefix" . | quote }}
+        {{ include "annotations.useSecureCommunication" . }}: {{ .Values.useSecureCommunication | quote }}
+        {{ include "annotations.workersPerPoolProxy" . }}: {{ .Values.workersPerPoolProxy | quote }}
+        {{- end }}
+
+    spec:
+      # If set to false, disable creation of environment variables for services
+      enableServiceLinks: {{ include "derived.enableServiceLinks" . }}
+
+      # Set selector and tolerations
+      nodeSelector: {{ toJson .Values.workerNodeSelector }}
+      tolerations: {{ toJson .Values.workerTolerations }}
+
+      subdomain: {{ include "resources.workerService" . }}
+      terminationGracePeriodSeconds: {{ .Values.stopWorkerGracePeriod }}
+
+      # Run as root so we can launch processes as the matlab user
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 0
+
+      containers:
+      - name: {{ $name }}
+        image: {{ printf "%s:%s" $workerImage $workerImageTag }}
+        imagePullPolicy: {{ .Values.matlabImagePullPolicy }}
+        command:
+        - "/bin/bash"
+        - {{ printf "%s/worker.sh" (include "paths.configDir" .)  | quote }}
+
+        env:
+        - name: MJS_WORKER_USERNAME
+          value: {{ .Values.workerUsername }}
+        - name: MJS_WORKER_PASSWORD
+          value: {{ .Values.workerPassword }}
+        - name: USER
+          value: {{ .Values.workerUsername }}
+        - name: MLM_LICENSE_FILE
+          value: {{ .Values.networkLicenseManager }}
+        - name: SHELL
+          value: "/bin/sh"
+        {{- range $key, $value := (.Values.extraWorkerEnv | default dict) }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- if $usePoolProxy }}
+        - name: PARALLEL_SERVER_POOL_PROXY_EXTERNAL_HOST
+          value: "$CLIENT_OVERRIDE"
+        {{- if .Values.useSecureCommunication }}
+        - name: PARALLEL_SERVER_POOL_PROXY_CERTIFICATE
+          value: {{ printf "%s/%s" (include "paths.proxyCertDir" .) (include "paths.certFile" .) }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.javaPVC }}
+        - name: MJS_JAVA
+          value: {{ include "paths.javaDir" . }}
+        - name: MATLAB_JAVA
+          value: {{ include "paths.javaDir" . }}
+        {{- end }}
+
+        # Set optional resource requests and limits
+        resources:
+          requests:
+            {{- if .Values.workerCPURequest }}
+            cpu: {{ .Values.workerCPURequest }}
+            {{- end }}
+            {{- if .Values.workerMemoryRequest }}
+            memory: {{ .Values.workerMemoryRequest }}
+            {{- end }}
+          limits:
+            {{- if .Values.workerCPULimit }}
+            cpu: {{ .Values.workerCPULimit }}
+            {{- end }}
+            {{- if .Values.workerMemoryLimit }}
+            memory: {{ .Values.workerMemoryLimit }}
+            {{- end }}
+            {{- if gt (int .Values.numGPUs) 0 }}
+            "nvidia.com/gpu": {{ .Values.numGPUs | quote }}
+            {{- end }}
+
+        {{- if ge .Values.matlabRelease "r2024b" }}
+        # Configure liveness probe.
+        # Note we do not use a startup probe for workers because if we do, the headless service will
+        # not create a DNS entry for the pod until it succeeds; this delays the worker from
+        # registering with the job manager.
+        {{- $healthcheckExe := printf "%s/glnxa64/mjshealthcheck" (include "paths.binDir" .) }}
+        {{- $probeTimeout := .Values.livenessProbeTimeout | default 30 }}
+        {{- $livenessProbePeriod := .Values.livenessProbePeriod | default 300 }}
+        {{- $livenessProbeInitialDelay := .Values.livenessProbeInitialDelay | default 300 }}
+        livenessProbe:
+          exec:
+            command:
+            - {{ $healthcheckExe  | quote }}
+            - "-worker"
+            - "-matlabroot"
+            - {{ include "paths.matlabroot" . | quote }}
+            - "-baseport"
+            - {{ .Values.basePort | quote }}
+            - "-timeout"
+            - {{ $probeTimeout | quote }}
+          initialDelaySeconds: {{ $livenessProbeInitialDelay }} 
+          periodSeconds: {{ $livenessProbePeriod }}
+          timeoutSeconds: {{ $probeTimeout }}
+          failureThreshold: {{ .Values.livenessProbeFailureThreshold | default 3 }}
+        {{- end }}
+
+        # Stop the worker cleanly when the container stops
+        lifecycle:
+          preStop:
+            exec:   
+              command:
+              - "/bin/bash"
+              - {{ printf "%s/stopWorker.sh" (include "paths.configDir" .)  | quote }}
+
+        volumeMounts:
+        {{- $configVolName := "config-vol" }}
+        {{- $logVolName := "log-vol" }}
+        {{- $matlabVolName := "matlab-vol" }}
+        {{- $secretVolName := include "resources.sharedSecretVol" . }}
+        {{- $javaVolName := "java-vol" }}
+        - name: {{ $configVolName }}
+          mountPath: {{ include "paths.configDir" . }}
+        {{- if .Values.workerLogPVC }}
+        - name: {{ $logVolName }}
+          mountPath: {{ include "paths.logbase" . }}
+        {{- end }}
+        {{- if .Values.matlabPVC }}
+        - name: {{ $matlabVolName }}
+          mountPath: {{ include "paths.matlabroot" . }}
+          readOnly: true
+        {{- end }}
+        {{- if eq (include "derived.requiresSecret" .) "true" }}
+        - name: {{ $secretVolName }}
+          mountPath: {{ include "paths.secretDir" . }}
+          readOnly: true
+        {{- end }}
+        {{- if .Values.javaPVC }}
+        - name: {{ $javaVolName }}
+          mountPath: {{ include "paths.javaDir" . }}
+        {{- end }}
+        {{- if and $usePoolProxy .Values.useSecureCommunication }}
+        - name: proxy-cert-vol
+          mountPath: {{ include "paths.proxyCertDir" . }}
+        {{- end }}
+        {{- range $pvc := .Values.additionalMatlabPVCs }}
+        - name: {{ $pvc }}
+          mountPath: {{ printf "%s/%s" (include "paths.additionalMatlabDir" .) $pvc }}
+        {{- end }}
+        {{- range $pvc, $path := .Values.additionalWorkerPVCs }}
+        - name: {{ $pvc }}
+          mountPath: {{ $path }}
+        {{- end }}
+
+      volumes:
+      - name: {{ $configVolName }}
+        configMap:
+          name: {{ include "resources.workerConfigMap" . }}
+      {{- if .Values.workerLogPVC }}
+      - name: {{ $logVolName }}
+        persistentVolumeClaim:
+          claimName: {{ .Values.workerLogPVC }}
+      {{- end }}
+      {{- if and .Values.matlabPVC }}
+      - name: {{ $matlabVolName }}
+        persistentVolumeClaim:
+          claimName: {{ .Values.matlabPVC }}
+      {{- end }}
+      {{- if eq (include "derived.requiresSecret" .) "true" }}
+      - name: {{ $secretVolName }}
+        secret:
+          secretName: {{ include "resources.sharedSecret" . }}
+          defaultMode: 400 # only readable by owner
+      {{- end }}
+      {{- if .Values.javaPVC }}
+      - name: {{ $javaVolName }}
+        persistentVolumeClaim:
+          claimName: {{ .Values.javaPVC }}
+      {{- end }}
+      {{- range $pvc := .Values.additionalMatlabPVCs }}
+      - name: {{ $pvc }}
+        persistentVolumeClaim:
+          claimName: {{ $pvc }}
+      {{- end }}
+      {{- range $pvc, $path := .Values.additionalWorkerPVCs }}
+      - name: {{ $pvc }}
+        persistentVolumeClaim:
+          claimName: {{ $pvc }}
+      {{- end }}

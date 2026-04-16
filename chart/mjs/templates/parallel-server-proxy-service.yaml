@@ -1,0 +1,21 @@
+{{- if and (eq (include "derived.useParallelServerProxy" .) "true") (eq (include "derived.useHAProxy" . ) "true" ) }}
+# When running in backwards-compatible mode, or when exporting metrics create a ClusterIP service to allow the HAproxy to route to the parallel server proxy.
+# Copyright 2025 The MathWorks, Inc.
+{{- $name := include "resources.parallelServerProxy" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+spec:
+  type: ClusterIP
+  selector:
+   app: {{ $name }}
+  ports:
+  - name: "tcp-parallel-server-proxy"
+    protocol: TCP
+    appProtocol: TCP
+    port: {{ .Values.parallelServerProxyPort }} 
+    targetPort: {{ .Values.parallelServerProxyPort }} 
+{{ end -}}

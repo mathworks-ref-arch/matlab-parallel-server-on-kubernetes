@@ -1,0 +1,10 @@
+# Headless service providing stable network identity for MATLAB workers
+# Copyright 2025 The MathWorks, Inc.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "resources.workerService" . }}
+spec:
+  clusterIP: None
+  selector:
+    app: {{ include "resources.worker" . }}

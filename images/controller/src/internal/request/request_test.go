@@ -1,5 +1,5 @@
-// Copyright 2024 The MathWorks, Inc.
-package request
+// Copyright 2024-2025 The MathWorks, Inc.
+package request_test
 
 import (
 	"bytes"
@@ -8,42 +8,92 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 
-	"controller/internal/config"
+	"controller/internal/controller"
 	"controller/internal/logging"
+	"controller/internal/request"
 	mockClient "controller/mocks/k8s"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Test the GetRequest method
-func TestGetRequest(t *testing.T) {
-	verifyGetRequest(t, false)
-}
-
-// Test the GetRequest method when requireScriptVerification=trye
-func TestGetRequestWithScriptVerification(t *testing.T) {
-	verifyGetRequest(t, true)
-}
-
-func verifyGetRequest(t *testing.T, requireScriptVerification bool) {
-	conf := config.Config{
-		ResizePath:                "/path/to/resize/script",
-		RequireScriptVerification: requireScriptVerification,
-		SecretDir:                 "/my/secret",
-		SecretFileName:            "secret.json",
+// Test construction of the resize status command
+func TestGetResizeStatusCommand(t *testing.T) {
+	conf := request.ExecConfig{
+		BasePort:                  27350,
+		RequireScriptVerification: false,
+		ResizePath:                "/path/to/resize",
+		TimeoutSecs:               10,
 	}
-	requestGetter, client := createRequestGetterWithMockClient(t, &conf)
+	cmd := request.GetResizeStatusCommand(conf)
+	require.Len(t, cmd, 6, "Unexpected command length")
+	verifyResizeStatusCommand(t, conf, cmd)
+}
+
+// Test construction of the resize status command with script verification turned on
+func TestGetResizeStatusCommandWithVerification(t *testing.T) {
+	conf := request.ExecConfig{
+		BasePort:                  3000,
+		RequireScriptVerification: true,
+		ResizePath:                "/path/to/resize",
+		SecretPath:                "/path/to/secret",
+		TimeoutSecs:               2,
+	}
+	cmd := request.GetResizeStatusCommand(conf)
+	require.Len(t, cmd, 8, "Unexpected command length")
+	verifyResizeStatusCommand(t, conf, cmd)
+	assert.Equal(t, "-secretfile", cmd[6], "Command should contain secret file arg")
+	assert.Equal(t, conf.SecretPath, cmd[7], "Command should contain path to secret file arg")
+}
+
+func TestGetRequestNoWorkers(t *testing.T) {
+	requestGetter, client := newWithMock(t, nil)
 
 	// Construct expected response
-	wantReq := ResizeRequest{
+	wantReq := controller.ResizeRequest{
+		DesiredWorkers: 5,
+		MaxWorkers:     20,
+		Workers:        []controller.ConnectedWorker{},
+	}
+
+	// Create the raw string needed to get the expected request
+	rawReq := fmt.Sprintf(`
+{
+	"jobManagers": [
+		{
+		"name": "myJobManager",
+		"host": "myhostname",
+		"desiredWorkers": {
+			"linux": %d,
+			"windows": 0
+		},
+		"maxWorkers": {
+			"linux": %d,
+			"windows": 8
+		},
+		"workers": []
+		}
+	]
+}`, wantReq.DesiredWorkers, wantReq.MaxWorkers)
+
+	// Check we get the expected request
+	expectExecReponse(client, rawReq)
+	gotReq, err := requestGetter.GetRequest()
+	require.NoError(t, err)
+	assert.Equal(t, wantReq, *gotReq, "unexpectected resize request returned")
+}
+
+func TestGetRequestWithWorkers(t *testing.T) {
+	requestGetter, client := newWithMock(t, nil)
+
+	// Construct expected response
+	wantReq := controller.ResizeRequest{
 		DesiredWorkers: 10,
 		MaxWorkers:     50,
-		Workers: []WorkerStatus{
+		Workers: []controller.ConnectedWorker{
 			{
 				Name:        "worker1",
 				State:       "busy",
@@ -55,22 +105,6 @@ func verifyGetRequest(t *testing.T, requireScriptVerification bool) {
 				SecondsIdle: 30,
 			},
 		},
-	}
-
-	// Set up mock client to return the job manager pod
-	jmPodName := "jmPod"
-	client.EXPECT().GetJobManagerPod().Once().Return(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: jmPodName},
-	}, nil)
-
-	// Check the command we are going to run
-	expectedCmd := getResizeStatusCommand(requestGetter.config)
-	secretFileArg := "-secretfile"
-	assert.Contains(t, expectedCmd, conf.ResizePath, "command should contain path to resize executable")
-	if requireScriptVerification {
-		assert.Containsf(t, expectedCmd, secretFileArg, "resize status command should contain %s when requireScriptVerification is true", secretFileArg)
-	} else {
-		assert.NotContainsf(t, expectedCmd, secretFileArg, "resize status command should not contain %s when requireScriptVerification is false", secretFileArg)
 	}
 
 	// Create the raw string needed to get the expected request
@@ -108,43 +142,40 @@ func verifyGetRequest(t *testing.T, requireScriptVerification bool) {
 	]
 }`, wantReq.DesiredWorkers, wantReq.MaxWorkers, wantReq.Workers[0].Name, wantReq.Workers[0].State, wantReq.Workers[0].SecondsIdle, wantReq.Workers[1].Name, wantReq.Workers[1].State, wantReq.Workers[1].SecondsIdle)
 
-	// Set up the mock client to return this string
-	stdOut := bytes.NewBuffer([]byte(rawReq))
-	client.EXPECT().ExecOnPod(jmPodName, expectedCmd).Once().Return(stdOut, nil)
-
 	// Check we get the expected request
+	expectExecReponse(client, rawReq)
 	gotReq, err := requestGetter.GetRequest()
 	require.NoError(t, err)
 	assert.Equal(t, wantReq, *gotReq, "unexpectected resize request returned")
 }
 
 func TestGetJobManagerPodErr(t *testing.T) {
-	requestGetter, client := createRequestGetterWithMockClient(t, &config.Config{})
+	requestGetter, client := newWithMock(t, nil)
 	errMsg := "could not get job manager pod"
-	client.EXPECT().GetJobManagerPod().Once().Return(nil, errors.New(errMsg))
+	client.EXPECT().GetReadyPod(testConfig.JobManagerLabel, testConfig.JobManagerContainer).Once().Return(nil, errors.New(errMsg))
 	_, err := requestGetter.GetRequest()
-	assert.Error(t, err, "should get error when GetJobManagerPod errors")
+	assert.Error(t, err, "should get error when unable to get job manager pod")
 	assert.Contains(t, err.Error(), errMsg, "error should contain original error message")
 }
 
 func TestExecError(t *testing.T) {
-	requestGetter, client := createRequestGetterWithMockClient(t, &config.Config{})
+	requestGetter, client := newWithMock(t, nil)
 	podName := "jm-pod"
-	client.EXPECT().GetJobManagerPod().Once().Return(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: podName}}, nil)
+	client.EXPECT().GetReadyPod(testConfig.JobManagerLabel, testConfig.JobManagerContainer).Once().Return(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: podName}}, nil)
 	errMsg := "could not exec the command"
-	client.EXPECT().ExecOnPod(podName, mock.Anything).Once().Return(nil, errors.New(errMsg))
+	client.EXPECT().ExecOnPod(podName, testConfig.JobManagerContainer, testCmd).Once().Return(nil, errors.New(errMsg))
 	_, err := requestGetter.GetRequest()
-	assert.Error(t, err, "should get error when GetJobManagerPod errors")
+	assert.Error(t, err, "should get error when ExecOnPod errors")
 	assert.Contains(t, err.Error(), errMsg, "error should contain original error message")
 }
 
 // Check for errors when processing a request that is not valid JSON
-func TestProcessStatusInvalidJSON(t *testing.T) {
+func TestInvalidJSON(t *testing.T) {
 	invalidJSON := "this-is-not-valid"
-	m, _ := createRequestGetterWithMockClient(t, &config.Config{})
-	status, err := m.processRequest([]byte(invalidJSON))
-	assert.Error(t, err, "processStatus should error when JSON cannot be unmarshaled")
-	assert.Nil(t, status, "processStatus should return nil status when JSON cannot be unmarshaled")
+	r, client := newWithMock(t, nil)
+	expectExecReponse(client, invalidJSON)
+	_, err := r.GetRequest()
+	assert.Error(t, err, "Expect error when JSON cannot be unmarshaled")
 }
 
 // Check that we get an error when there is no job manager
@@ -154,10 +185,10 @@ func TestNoJobManagers(t *testing.T) {
 	"jobManagers": [
 	]
 }`
-	m, _ := createRequestGetterWithMockClient(t, &config.Config{})
-	status, err := m.processRequest([]byte(rawReq))
-	assert.Error(t, err, "processStatus should error when JSON cannot be unmarshaled")
-	assert.Nil(t, status, "processStatus should return nil status when JSON cannot be unmarshaled")
+	r, client := newWithMock(t, nil)
+	expectExecReponse(client, rawReq)
+	_, err := r.GetRequest()
+	assert.Error(t, err, "Expect error when there are no job managers in response")
 }
 
 // Check that we exit when the request contains multiple job managers, which is not allowed
@@ -173,19 +204,45 @@ func TestProcessJSONMultipleJobManagers(t *testing.T) {
 		}
 	]
 }`
-	m, _ := createRequestGetterWithMockClient(t, &config.Config{})
 	didExit := false
-	m.exitFunc = func() { didExit = true }
-	_, err := m.processRequest([]byte(rawReq))
+	exitFunc := func(error) { didExit = true }
+	m, client := newWithMock(t, exitFunc)
+	expectExecReponse(client, rawReq)
+	_, err := m.GetRequest()
 	require.NoError(t, err)
 	assert.True(t, didExit, "Process should have exited when multiple job managers were found")
 }
 
-func createRequestGetterWithMockClient(t *testing.T, conf *config.Config) (*MJSRequestGetter, *mockClient.Client) {
-	client := mockClient.NewClient(t)
-	return &MJSRequestGetter{
-		client: client,
-		logger: logging.NewFromZapLogger(zaptest.NewLogger(t)),
-		config: conf,
-	}, client
+func newWithMock(t *testing.T, exitFunc func(error)) (controller.ResizeRequestGetter, *mockClient.MockClient) {
+	client := mockClient.NewMockClient(t)
+	logger := logging.NewFromZapLogger(zaptest.NewLogger(t))
+	return request.NewPodResizeRequestGetter(testConfig, client, exitFunc, logger), client
+}
+
+func verifyResizeStatusCommand(t *testing.T, conf request.ExecConfig, cmd []string) {
+	assert.Equal(t, "timeout", cmd[0], "Command should start with timeout")
+	assert.Equal(t, fmt.Sprintf("%d", conf.TimeoutSecs), cmd[1], "Command should include timeout in seconds")
+	assert.Equal(t, conf.ResizePath, cmd[2], "Command should include path to resize script")
+	assert.Equal(t, "status", cmd[3], "Command should include 'status' subcommand")
+	assert.Equal(t, "-baseport", cmd[4], "Command should include baseport arg")
+	assert.Equal(t, fmt.Sprintf("%d", conf.BasePort), cmd[5], "Command should include baseport value")
+}
+
+var testConfig = request.ExecConfig{
+	TimeoutSecs:         30,
+	ResizePath:          "/path/to/resize/script",
+	BasePort:            8080,
+	JobManagerContainer: "my-jm-container",
+	JobManagerLabel:     "app=job-manager",
+}
+
+var testCmd = request.GetResizeStatusCommand(testConfig)
+
+func expectExecReponse(client *mockClient.MockClient, response string) {
+	// Configure client to get the job manager pod
+	podName := "jm-pod"
+	client.EXPECT().GetReadyPod(testConfig.JobManagerLabel, testConfig.JobManagerContainer).Once().Return(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: podName}}, nil)
+
+	// Configure client to make the request
+	client.EXPECT().ExecOnPod(podName, testConfig.JobManagerContainer, testCmd).Return(bytes.NewBufferString(response), nil).Once()
 }

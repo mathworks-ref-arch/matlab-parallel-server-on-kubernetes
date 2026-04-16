@@ -1,148 +1,103 @@
 // Package resize contains code for resizing an MJS cluster in Kubernetes
-// Copyright 2024 The MathWorks, Inc.
+// Copyright 2024-2026 The MathWorks, Inc.
 package resize
 
 import (
+	"controller/internal/annotations"
+	"controller/internal/certificate"
 	"controller/internal/config"
+	"controller/internal/controller"
 	"controller/internal/k8s"
 	"controller/internal/logging"
-	"controller/internal/specs"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strconv"
 
-	"github.com/mathworks/mjssetup/pkg/certificate"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/apimachinery/pkg/types"
+	corev1 "k8s.io/api/core/v1"
 )
 
-// Resize is an interface for resizing a cluster
-type Resizer interface {
-	GetWorkers() ([]Worker, error)
-	AddWorkers([]specs.WorkerInfo) error
-	DeleteWorkers([]string) error
+// K8sResizer implements resizing of an MJS cluster in Kubernetes
+type K8sResizer struct {
+	config          ResizeConfig
+	logger          *logging.Logger
+	client          k8s.Client
+	specFactory     SpecFactory
+	certCreator     certificate.CertCreator
+	templateChecker TemplateChecker
 }
 
-// Worker represents a worker currently deployed in the Kubernetes cluster
-type Worker struct {
-	Info      specs.WorkerInfo // Metadata for this worker
-	IsRunning bool             // Whether a worker deployment has started running a pod
+type ResizeConfig struct {
+	WorkerLabel    string
+	PoolProxyLabel string
+	ProxyCertFile  string
+	AnnotationKeys config.AnnotationKeys
 }
 
-// MJSResizer implements resizing of an MJS cluster in Kubernetes
-type MJSResizer struct {
-	config      *config.Config
-	logger      *logging.Logger
-	client      k8s.Client
-	specFactory *specs.SpecFactory
+type SpecFactory interface {
+	GetWorkerPodSpec(int) (*corev1.Pod, error)
+	GetPoolProxyDeploymentSpec(int) (*appsv1.Deployment, error)
 }
 
-// NewMJSResizer constructs an MJSResizer
-func NewMJSResizer(conf *config.Config, uid types.UID, logger *logging.Logger) (*MJSResizer, error) {
-	client, err := k8s.NewClient(conf, logger)
-	if err != nil {
-		return nil, err
+type TemplateChecker interface {
+	Refresh() error
+	GetWorkerTemplateChecksum() string
+	GetPoolProxyTemplateChecksum() string
+}
+
+func NewK8sResizer(conf ResizeConfig, client k8s.Client, specFactory SpecFactory, templateChecker TemplateChecker, certCreator certificate.CertCreator, logger *logging.Logger) controller.Resizer {
+	return &K8sResizer{
+		config:          conf,
+		logger:          logger,
+		client:          client,
+		specFactory:     specFactory,
+		certCreator:     certCreator,
+		templateChecker: templateChecker,
 	}
-	m := MJSResizer{
-		config: conf,
-		logger: logger,
-		client: client,
-	}
-	m.specFactory, err = specs.NewSpecFactory(conf, uid)
-	if err != nil {
-		return nil, err
-	}
-	return &m, nil
 }
 
 // AddWorkers adds workers to the Kubernetes cluster
-func (m *MJSResizer) AddWorkers(workers []specs.WorkerInfo) error {
-	m.logger.Info("Adding workers", zap.Any("workers", workers))
-	if m.config.UsePoolProxy() {
-		return m.addWorkersAndProxies(workers)
-	}
-	m.addWorkersForInternalCluster(workers)
-	return nil
-}
+func (r *K8sResizer) AddWorkers(workerIDs []int) error {
+	r.logger.Info("Adding workers", zap.Any("workerIDs", workerIDs))
 
-// GetWorkers returns a list of the MJS workers currently running on the Kubernetes cluster; this list is determined by examining the worker deployments present on the cluster
-func (m *MJSResizer) GetWorkers() ([]Worker, error) {
-	deployments, err := m.client.GetDeploymentsWithLabel(fmt.Sprintf("%s=%s", specs.AppKey, specs.WorkerLabels.AppLabel))
-	if err != nil {
-		return []Worker{}, err
-	}
-	workers := getWorkersFromDeployments(deployments, m.logger)
-	return workers, nil
-}
-
-// DeleteWorkers deletes a list of MJS workers from a Kubernetes cluster
-func (m *MJSResizer) DeleteWorkers(names []string) error {
-	m.logger.Info("Deleting workers", zap.Any("workers", names))
-	existingWorkers, err := m.GetWorkers()
-	if err != nil {
-		return fmt.Errorf("error getting existing workers: %v", err)
-	}
-
-	// Create a hash map of existing workers for efficient lookup
-	existingWorkerMap := map[string]specs.WorkerInfo{}
-	for _, w := range existingWorkers {
-		existingWorkerMap[w.Info.Name] = w.Info
-	}
-
-	// Attempt to delete each worker in the list
-	deletedWorkerIDMap := map[int]bool{}
-	for _, name := range names {
-		workerInfo, exists := existingWorkerMap[name]
-		if exists {
-			err := m.deleteWorker(workerInfo.HostName)
-			if err != nil {
-				m.logger.Error("Error deleting worker", zap.String("hostname", workerInfo.HostName), zap.Error(err))
-			} else if m.config.UsePoolProxy() {
-				// Track successfully deleted workers so we know which pool proxies to delete later
-				deletedWorkerIDMap[workerInfo.ID] = true
-			}
+	// Get pod specs for new workers
+	workerSpecs := []*corev1.Pod{}
+	for _, w := range workerIDs {
+		spec, err := r.specFactory.GetWorkerPodSpec(w)
+		if err != nil {
+			return err
 		}
+		workerSpecs = append(workerSpecs, spec)
 	}
 
-	// Clean up resources associated with the workers we successfully deleted
-	if m.config.UsePoolProxy() {
-		return m.deleteProxiesIfNotNeeded(existingWorkers, deletedWorkerIDMap)
-	}
-	return nil
-}
-
-// addWorkersAndProxies adds a list of workers plus any parallel pool proxies they need
-func (m *MJSResizer) addWorkersAndProxies(workers []specs.WorkerInfo) error {
-	newProxiesNeeded, noProxyNeeded, err := m.getPoolProxiesNeededForWorkers(workers)
+	// Check which proxies we need to create
+	newProxiesNeeded, noProxyNeeded, err := r.getPoolProxiesNeededForWorkers(workerSpecs)
 	if err != nil {
 		return err
 	}
 
 	// First, add workers that do not need a new parallel pool proxy
-	for _, w := range noProxyNeeded {
-		err := m.addWorker(&w)
+	for _, spec := range noProxyNeeded {
+		_, err := r.client.CreatePod(spec)
 		if err != nil {
-			logAddWorkerError(m.logger, &w, err)
+			logAddWorkerError(r.logger, spec.Name, err)
 		}
 	}
 
 	// Next, add each parallel pool proxy and then its associated workers
-	for p, workers := range newProxiesNeeded {
-		proxy := specs.NewPoolProxyInfo(p, m.config.PoolProxyBasePort)
-		err := m.addPoolProxy(proxy)
+	for proxyID, workers := range newProxiesNeeded {
+		proxy, err := r.addPoolProxy(proxyID)
 		if err != nil {
-			m.logger.Error("error adding parallel pool proxy", zap.String("name", proxy.Name), zap.Int("ID", proxy.ID), zap.Error(err))
+			r.logger.Error("error adding parallel pool proxy", zap.Int("ID", proxyID), zap.Error(err))
 			// We should not add the workers associated with this proxy, since proxy creation failed
 			continue
 		}
 
 		workersWereAdded := false
-		for _, w := range workers {
-			err := m.addWorker(&w)
+		for _, spec := range workers {
+			_, err := r.client.CreatePod(spec)
 			if err != nil {
-				logAddWorkerError(m.logger, &w, err)
+				logAddWorkerError(r.logger, spec.Name, err)
 			} else {
 				workersWereAdded = true
 			}
@@ -150,15 +105,89 @@ func (m *MJSResizer) addWorkersAndProxies(workers []specs.WorkerInfo) error {
 
 		// Clean up the proxy if none of its associated workers were successfully added
 		if !workersWereAdded {
-			return m.deletePoolProxy(proxy.Name)
+			return r.deletePoolProxy(proxy)
 		}
 	}
 	return nil
 }
 
-// getPoolProxiesNeededForWorkers returns a map of parallel pool proxies to create and the workers dependent on them, plus a list of workers that do not need a new proxy
-func (m *MJSResizer) getPoolProxiesNeededForWorkers(workers []specs.WorkerInfo) (map[int][]specs.WorkerInfo, []specs.WorkerInfo, error) {
-	existingProxies, err := m.getPoolProxies()
+// GetAndUpdateWorkers returns a list of the IDs of MJS workers currently running on the Kubernetes cluster
+// The list is determined by examining the worker pods present on the cluster.
+// The workers are checked for consistency with the latest template and deleted if outdated.
+func (r *K8sResizer) GetAndUpdateWorkers() ([]controller.DeployedWorker, error) {
+	workers, err := r.getWorkers()
+	if err != nil {
+		return nil, err
+	}
+
+	// Make sure everything is up to date
+	if err := r.templateChecker.Refresh(); err != nil {
+		return nil, err
+	}
+	updatedWorkers, err := r.purgeOutdatedWorkers(workers)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.updateOutdatedProxies(updatedWorkers); err != nil {
+		return nil, err
+	}
+
+	currentWorkers := []controller.DeployedWorker{}
+	for _, w := range updatedWorkers {
+		currentWorkers = append(currentWorkers, w.DeployedWorker)
+	}
+	return currentWorkers, nil
+}
+
+func (r *K8sResizer) getWorkers() ([]versionedWorker, error) {
+	pods, err := r.client.GetPodsWithLabel(r.config.WorkerLabel)
+	if err != nil {
+		return nil, err
+	}
+	return r.getWorkersFromPods(pods.Items), nil
+}
+
+// DeleteWorkers deletes a list of MJS workers from a Kubernetes cluster
+func (r *K8sResizer) DeleteWorkers(workers []controller.DeployedWorker) error {
+	r.logger.Info("Deleting workers", zap.Any("workers", workers))
+	allWorkers, err := r.getWorkers()
+	if err != nil {
+		r.logger.Error("Failed to check existing workers", zap.Error(err))
+		return err
+	}
+	return r.deleteWorkers(workers, allWorkers)
+}
+
+func (r *K8sResizer) deleteWorkers(toDelete []controller.DeployedWorker, allWorkers []versionedWorker) error {
+	// Attempt to delete each worker in the list
+	deletedWorkerIDs := map[int]bool{}
+	for _, w := range toDelete {
+		err := r.deleteWorker(w.PodName)
+		if err != nil {
+			r.logger.Error("Error deleting worker", zap.String("name", w.Name), zap.Error(err))
+		}
+		deletedWorkerIDs[w.ID] = true
+	}
+
+	// Remove any proxies that are no longer needed
+	proxies, err := r.getPoolProxies()
+	if err != nil {
+		r.logger.Error("Failed to check existing pool proxies", zap.Error(err))
+		return err
+	}
+	remainingWorkers := []versionedWorker{}
+	for _, w := range allWorkers {
+		if !deletedWorkerIDs[w.ID] {
+			remainingWorkers = append(remainingWorkers, w)
+		}
+	}
+	r.deleteUnusedProxies(proxies, remainingWorkers)
+	return nil
+}
+
+// getPoolProxiesNeededForWorkers returns a map of IDs of parallel pool proxies to create and the IDs of workers dependent on them, plus a list of IDs of workers that do not need a new proxy
+func (r *K8sResizer) getPoolProxiesNeededForWorkers(workerSpecs []*corev1.Pod) (map[int][]*corev1.Pod, []*corev1.Pod, error) {
+	existingProxies, err := r.getPoolProxies()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -166,15 +195,15 @@ func (m *MJSResizer) getPoolProxiesNeededForWorkers(workers []specs.WorkerInfo) 
 	// Create hash map of existing proxies
 	existingProxyIDs := map[int]bool{}
 	for _, p := range existingProxies {
-		existingProxyIDs[p.ID] = true
+		existingProxyIDs[p.id] = true
 	}
 
 	// Check which proxy is needed by each worker
-	newProxiesNeeded := map[int][]specs.WorkerInfo{}
-	noProxyNeeded := []specs.WorkerInfo{}
-	for _, w := range workers {
-		p := m.specFactory.CalculatePoolProxyForWorker(w.ID)
-		if existingProxyIDs[p] {
+	newProxiesNeeded := map[int][]*corev1.Pod{}
+	noProxyNeeded := []*corev1.Pod{}
+	for _, w := range workerSpecs {
+		p, needProxy := r.getProxyNeededByWorker(w)
+		if !needProxy || existingProxyIDs[p] {
 			noProxyNeeded = append(noProxyNeeded, w)
 		} else {
 			newProxiesNeeded[p] = append(newProxiesNeeded[p], w)
@@ -183,228 +212,361 @@ func (m *MJSResizer) getPoolProxiesNeededForWorkers(workers []specs.WorkerInfo) 
 	return newProxiesNeeded, noProxyNeeded, nil
 }
 
-// addWorkers adds a list of workers, without adding pool proxies or exposing worker ports
-func (m *MJSResizer) addWorkersForInternalCluster(workers []specs.WorkerInfo) {
-	for _, w := range workers {
-		err := m.addWorker(&w)
-		if err != nil {
-			logAddWorkerError(m.logger, &w, err)
-		}
+func (r *K8sResizer) getProxyNeededByWorker(workerSpec *corev1.Pod) (int, bool) {
+	proxyID, ok, err := annotations.GetOptionalAnnotationInt(r.config.AnnotationKeys.PoolProxyID, &workerSpec.ObjectMeta)
+	if err != nil {
+		r.logger.Error(err.Error())
+		return 0, false
 	}
+	if !ok {
+		// This worker does not need a proxy
+		return 0, false
+	}
+	return proxyID, true
 }
 
-// addWorker adds a single MJS worker to the Kubernetes cluster
-func (m *MJSResizer) addWorker(w *specs.WorkerInfo) error {
-	w.GenerateUniqueHostName()
-	svcSpec := m.specFactory.GetWorkerServiceSpec(w)
-	_, err := m.client.CreateService(svcSpec)
-	if err != nil {
-		return err
-	}
-	_, err = m.client.CreateDeployment(m.specFactory.GetWorkerDeploymentSpec(w))
-	if err != nil {
-		m.logger.Error("Error creating pod", zap.Error(err))
-		m.logger.Debug("Cleaning up worker service since pod creation failed")
-		errDeleteSvc := m.client.DeleteService(svcSpec.Name)
-		if errDeleteSvc != nil {
-			m.logger.Error("Error cleaning up service after failed pod creation", zap.Error(err))
-		}
-	}
-	return err
+func (r *K8sResizer) getSecretNeededByProxy(proxySpec *appsv1.Deployment) (string, bool) {
+	return annotations.GetOptionalAnnotationString(r.config.AnnotationKeys.SecretName, &proxySpec.ObjectMeta)
 }
 
 // deleteWorker removes a single MJS worker from the Kubernetes cluster
-func (m *MJSResizer) deleteWorker(name string) error {
-	err := m.client.DeleteDeployment(name)
-	if err != nil {
-		// If we failed to delete the deployment, we should not proceed to deleting the service, as this will leave an orphaned deployment
-		return err
-	}
-	err = m.client.DeleteService(name)
-	if err != nil {
-		return err
-	}
-	return nil
+func (r *K8sResizer) deleteWorker(podName string) error {
+	return r.client.DeletePod(podName)
 }
 
 // getPoolProxies gets a list of parallel pool proxies currently running on the cluster; this list is determined by examining the deployments present on the cluster
-func (m *MJSResizer) getPoolProxies() ([]specs.PoolProxyInfo, error) {
-	deployments, err := m.client.GetDeploymentsWithLabel(fmt.Sprintf("%s=%s", specs.AppKey, specs.PoolProxyLabels.AppLabel))
+func (r *K8sResizer) getPoolProxies() ([]*versionedProxy, error) {
+	deployments, err := r.client.GetDeploymentsWithLabel(r.config.PoolProxyLabel)
 	if err != nil {
-		return []specs.PoolProxyInfo{}, err
+		return nil, err
 	}
-	existingProxies := getProxiesFromDeployments(deployments, m.logger)
+	existingProxies := r.getProxiesFromDeployments(deployments)
 	return existingProxies, nil
 }
 
-// addPoolProxy adds a parallel pool proxy to the Kubernetes cluster
-func (m *MJSResizer) addPoolProxy(proxy specs.PoolProxyInfo) error {
-	if m.config.UseSecureCommunication {
-		err := m.createProxyCertificate(proxy.Name)
+func (r *K8sResizer) addPoolProxy(id int) (*versionedProxy, error) {
+	spec, err := r.specFactory.GetPoolProxyDeploymentSpec(id)
+	if err != nil {
+		return nil, err
+	}
+	proxyMetadata, err := r.getProxyFromDeployment(spec)
+	if err != nil {
+		return nil, err
+	}
+
+	secretName, needSecret := r.getSecretNeededByProxy(spec)
+	if needSecret {
+		err := r.createOrOverwriteProxySecret(secretName)
 		if err != nil {
-			m.logger.Error("Error creating certificate for pool proxy", zap.Error(err))
-			return err
+			r.logger.Error("Error creating certificate for pool proxy", zap.Error(err))
+			return nil, err
 		}
 	}
 
-	_, err := m.client.CreateDeployment(m.specFactory.GetPoolProxyDeploymentSpec(&proxy))
+	_, err = r.client.CreateDeployment(spec)
 	if err != nil {
-		m.logger.Error("Error creating parallel pool proxy deployment", zap.Error(err))
-		return err
+		r.logger.Error("Error creating parallel pool proxy deployment", zap.Error(err))
+		return nil, err
 	}
-
-	return err
+	return proxyMetadata, nil
 }
 
-// createProxyCertificate creates a Kubernetes secret containing a certificate for workers to use when connecting to the proxy
-func (m *MJSResizer) createProxyCertificate(name string) error {
+// Create a new proxy certificate; if one already exists (e.g. was drooled from a previous proxy), delete it.
+func (r *K8sResizer) createOrOverwriteProxySecret(name string) error {
+	_, exists, err := r.client.SecretExists(name)
+	if err != nil {
+		return fmt.Errorf("failed to check pool proxy secret: %v", err)
+	}
+	if exists {
+		r.logger.Info("Cleaning up existing pool proxy secret", zap.String("name", name))
+		err := r.client.DeleteSecret(name)
+		if err != nil {
+			return fmt.Errorf("failed to delete pool proxy secret: %v", err)
+		}
+	}
+
+	return r.createProxySecret(name)
+}
+
+func (r *K8sResizer) ensureProxySecretExists(name string) error {
+	_, exists, err := r.client.SecretExists(name)
+	if err != nil {
+		return fmt.Errorf("failed to check pool proxy secret: %v", err)
+	}
+	if exists {
+		return nil
+	}
+	return r.createProxySecret(name)
+}
+
+func (r *K8sResizer) ensureNoProxySecret(name string) error {
+	_, exists, err := r.client.SecretExists(name)
+	if err != nil {
+		return fmt.Errorf("failed to check pool proxy secret: %v", err)
+	}
+	if !exists {
+		return nil
+	}
+	r.logger.Debug("Cleaning up proxy certificate", zap.String("name", name))
+	return r.client.DeleteSecret(name)
+}
+
+// Create a Kubernetes secret containing a certificate for workers to use when connecting to the proxy
+func (r *K8sResizer) createProxySecret(name string) error {
 	// Generate the certificate
-	certCreator := certificate.New()
-	sharedSecret, err := certCreator.CreateSharedSecret()
+	sharedSecret, err := r.certCreator.CreateSharedSecret()
 	if err != nil {
 		return err
 	}
-	certificate, err := certCreator.GenerateCertificate(sharedSecret)
+	certificate, err := r.certCreator.GenerateCertificate(sharedSecret)
 	if err != nil {
 		return err
 	}
 
-	// Create spec for Kubernetes secret containing this certificate
+	// Create the Kubernetes secret
 	certBytes, err := json.Marshal(certificate)
 	if err != nil {
 		return fmt.Errorf("error marshaling certificate: %v", err)
 	}
-	secretSpec := m.specFactory.GetSecretSpec(name, false)
-	secretSpec.Data[specs.ProxyCertFileName] = certBytes
-
-	// Create the Kubernetes secret
-	_, err = m.client.CreateSecret(secretSpec)
+	r.logger.Debug("Creating pool proxy certificate", zap.String("name", name))
+	_, err = r.client.CreateSecret(name, map[string][]byte{
+		r.config.ProxyCertFile: certBytes,
+	}, false)
 	if err != nil {
 		return err
-	}
-	return nil
-}
-
-// deleteProxiesIfNotNeeded deletes any proxies that are no longer needed after worker deletion
-func (m *MJSResizer) deleteProxiesIfNotNeeded(originalWorkers []Worker, deletedIDs map[int]bool) error {
-	toKeep := map[int]bool{}
-	for _, worker := range originalWorkers {
-		wasDeleted := deletedIDs[worker.Info.ID]
-		if !wasDeleted {
-			toKeep[m.specFactory.CalculatePoolProxyForWorker(worker.Info.ID)] = true
-		}
-	}
-
-	existingProxies, err := m.getPoolProxies()
-	if err != nil {
-		return err
-	}
-
-	for _, proxy := range existingProxies {
-		shouldKeep := toKeep[proxy.ID]
-		if !shouldKeep {
-			err = m.deletePoolProxy(proxy.Name)
-			if err != nil {
-				m.logger.Warn("error deleting pool proxy", zap.Error(err))
-			}
-		}
 	}
 	return nil
 }
 
 // deletePoolProxy removes a parallel pool proxy from the Kubernetes cluster
-func (m *MJSResizer) deletePoolProxy(proxyName string) error {
-	m.logger.Info("Deleting parallel pool proxy", zap.String("name", proxyName))
-	if m.config.UseSecureCommunication {
-		err := m.client.DeleteSecret(proxyName)
+func (r *K8sResizer) deletePoolProxy(p *versionedProxy) error {
+	r.logger.Info("Deleting parallel pool proxy", zap.String("name", p.deploymentName))
+
+	if p.usesSecret {
+		_, exists, err := r.client.SecretExists(p.secretName)
 		if err != nil {
 			return err
 		}
+		if exists {
+			err := r.client.DeleteSecret(p.secretName)
+			if err != nil {
+				return err
+			}
+		}
 	}
-	return m.client.DeleteDeployment(proxyName)
+
+	return r.client.DeleteDeployment(p.deploymentName)
 }
 
-// getWorkersFromDeployments converts a list of worker deployments to a list of worker details
-func getWorkersFromDeployments(deployments *appsv1.DeploymentList, logger *logging.Logger) []Worker {
-	var workers []Worker
-	for _, d := range deployments.Items {
-		// Make sure the required labels are present
-		err := checkLabelsExist(d.Labels, []string{specs.WorkerLabels.Name, specs.WorkerLabels.ID, specs.WorkerLabels.HostName})
-		if err != nil {
-			logger.Error("Worker deployment has missing label", zap.Error(err), zap.String("name", d.Name))
-		}
-
-		// Convert the worker ID label to an int
-		workerID, err := getIntFromLabel(d.Labels, specs.WorkerLabels.ID, logger)
-		if err != nil {
+// Convert a list of worker pods to a list of worker details
+func (r *K8sResizer) getWorkersFromPods(pods []corev1.Pod) []versionedWorker {
+	var workers []versionedWorker
+	for _, p := range pods {
+		// Skip pods that are already being deleted
+		if p.DeletionTimestamp != nil {
 			continue
 		}
 
-		// Populate worker information from labels
-		workers = append(workers, Worker{
-			Info: specs.WorkerInfo{
-				Name:     d.Labels[specs.WorkerLabels.Name],
-				ID:       workerID,
-				HostName: d.Labels[specs.WorkerLabels.HostName],
-			},
-			IsRunning: d.Status.ReadyReplicas == 1,
-		})
+		worker, err := r.getWorkerFromPod(p)
+		if err != nil {
+			r.logger.Error(err.Error())
+			continue
+		}
+		workers = append(workers, *worker)
 	}
 	return workers
 }
 
+func (r *K8sResizer) getWorkerFromPod(p corev1.Pod) (*versionedWorker, error) {
+	keys := r.config.AnnotationKeys
+	meta := &p.ObjectMeta
+	workerID, err := annotations.GetAnnotationInt(keys.WorkerID, meta)
+	if err != nil {
+		return nil, err
+	}
+	checksum, err := annotations.GetAnnotationString(keys.TemplateChecksum, meta)
+	if err != nil {
+		return nil, err
+	}
+	workerName, err := annotations.GetAnnotationString(keys.WorkerName, meta)
+	if err != nil {
+		return nil, err
+	}
+	proxyID, usesProxy := r.getProxyNeededByWorker(&p)
+
+	return &versionedWorker{
+		DeployedWorker: controller.DeployedWorker{
+			Name:      workerName,
+			ID:        workerID,
+			IsRunning: p.Status.Phase == corev1.PodRunning,
+			PodName:   p.Name,
+		},
+		templateChecksum: checksum,
+		proxyID:          proxyID,
+		usesProxy:        usesProxy,
+	}, nil
+}
+
+type versionedWorker struct {
+	controller.DeployedWorker
+	templateChecksum string
+	usesProxy        bool
+	proxyID          int
+}
+
+type versionedProxy struct {
+	id               int
+	deploymentName   string
+	templateChecksum string
+	usesSecret       bool
+	secretName       string
+	certFile         string
+}
+
 // getProxiesFromDeployments converts a list of proxy deployments to a list of proxy details
-func getProxiesFromDeployments(deployments *appsv1.DeploymentList, logger *logging.Logger) []specs.PoolProxyInfo {
-	var proxies []specs.PoolProxyInfo
+func (r *K8sResizer) getProxiesFromDeployments(deployments *appsv1.DeploymentList) []*versionedProxy {
+	var proxies []*versionedProxy
 	for _, d := range deployments.Items {
-		// Make sure the required labels are present
-		err := checkLabelsExist(d.Labels, []string{specs.PoolProxyLabels.Name, specs.PoolProxyLabels.ID, specs.PoolProxyLabels.Port})
+		proxy, err := r.getProxyFromDeployment(&d)
 		if err != nil {
-			logger.Error("Proxy deployment has missing label", zap.Error(err), zap.String("name", d.Name))
-		}
-
-		// Convert labels to ints
-		proxyID, err := getIntFromLabel(d.Labels, specs.PoolProxyLabels.ID, logger)
-		if err != nil {
+			r.logger.Error(err.Error())
 			continue
 		}
-		port, err := getIntFromLabel(d.Labels, specs.PoolProxyLabels.Port, logger)
-		if err != nil {
-			continue
-		}
-
-		// Populate proxy information from labels
-		proxies = append(proxies, specs.PoolProxyInfo{
-			Name: d.Labels[specs.PoolProxyLabels.Name],
-			ID:   proxyID,
-			Port: port,
-		})
+		proxies = append(proxies, proxy)
 	}
 	return proxies
 }
 
-// checkLabelsExist errors if every element in a list of labels is not present in a label map
-func checkLabelsExist(labels map[string]string, checkFor []string) error {
-	for _, label := range checkFor {
-		_, ok := labels[label]
-		if !ok {
-			return fmt.Errorf("missing label %s", label)
+func (r *K8sResizer) getProxyFromDeployment(d *appsv1.Deployment) (*versionedProxy, error) {
+	keys := r.config.AnnotationKeys
+	meta := &d.ObjectMeta
+	proxyID, err := annotations.GetAnnotationInt(keys.PoolProxyID, meta)
+	if err != nil {
+		return nil, err
+	}
+	checksum, err := annotations.GetAnnotationString(keys.TemplateChecksum, meta)
+	if err != nil {
+		return nil, err
+	}
+	secretName, usesSecret := r.getSecretNeededByProxy(d)
+	return &versionedProxy{
+		deploymentName:   d.Name,
+		id:               proxyID,
+		templateChecksum: checksum,
+		usesSecret:       usesSecret,
+		secretName:       secretName,
+	}, nil
+}
+
+func logAddWorkerError(logger *logging.Logger, name string, err error) {
+	logger.Error("error adding worker", zap.String("name", name), zap.Error(err))
+}
+
+// Check for any workers that are out of sync with the latest template and delete them.
+// Note that we choose to delete rather than upgrade because we want the replaced workers to have
+// a fresh hostname to avoid issues with reconnections to the job manager.
+func (r *K8sResizer) purgeOutdatedWorkers(workers []versionedWorker) ([]versionedWorker, error) {
+	latestChecksum := r.templateChecker.GetWorkerTemplateChecksum()
+	toDelete := []controller.DeployedWorker{}
+	toKeep := []versionedWorker{}
+	for _, w := range workers {
+		if w.templateChecksum != latestChecksum {
+			toDelete = append(toDelete, w.DeployedWorker)
+		} else {
+			toKeep = append(toKeep, w)
+		}
+	}
+
+	if len(toDelete) > 0 {
+		r.logger.Info("deleting outdated workers", zap.Any("workers", toDelete))
+		if err := r.deleteWorkers(toDelete, workers); err != nil {
+			return nil, err
+		}
+	}
+	return toKeep, nil
+}
+
+// Update any outdated proxies, and delete proxies that are no longer needed.
+// We do this with the Kubernetes API to update a deployment spec.
+func (r *K8sResizer) updateOutdatedProxies(currentWorkers []versionedWorker) error {
+	proxies, err := r.getPoolProxies()
+	if err != nil {
+		return err
+	}
+	if len(proxies) == 0 {
+		return err
+	}
+
+	toKeep := r.deleteUnusedProxies(proxies, currentWorkers)
+	if len(toKeep) == 0 {
+		return nil
+	}
+
+	// Check the remaining proxies are up-to-date
+	latestChecksum := r.templateChecker.GetPoolProxyTemplateChecksum()
+	for _, p := range toKeep {
+		if p.templateChecksum == latestChecksum {
+			continue
+		}
+		err := r.updateProxy(p)
+		if err != nil {
+			r.logger.Error(err.Error())
 		}
 	}
 	return nil
 }
 
-// getIntFromLabel extracts an int from a label map and returns an error if the conversion fails
-func getIntFromLabel(labels map[string]string, key string, logger *logging.Logger) (int, error) {
-	resultStr := labels[key]
-	result, err := strconv.Atoi(resultStr)
+func (r *K8sResizer) updateProxy(oldProxy *versionedProxy) error {
+	r.logger.Info("updating outdated proxy", zap.Any("proxy", oldProxy))
+	spec, err := r.specFactory.GetPoolProxyDeploymentSpec(oldProxy.id)
 	if err != nil {
-		logger.Error("label could not be converted to int", zap.String("label", key), zap.String("value", resultStr), zap.Error(err))
-		return 0, errors.New("invalid label")
+		return err
 	}
-	return result, nil
+	newProxy, err := r.getProxyFromDeployment(spec)
+	if err != nil {
+		return err
+	}
+	_, err = r.client.UpdateDeployment(spec)
+	if err != nil {
+		return err
+	}
+
+	if newProxy.usesSecret {
+		// If the updated proxy needs a certificate, make sure it exists
+		// (e.g. in case helm upgrade was used to change useSecureCommunication to true
+		r.ensureProxySecretExists(newProxy.secretName)
+	} else if oldProxy.usesSecret {
+		// If the previous spec used a secret but the new one does not, delete the secret
+		r.ensureNoProxySecret(oldProxy.secretName)
+	}
+	return nil
 }
 
-func logAddWorkerError(logger *logging.Logger, w *specs.WorkerInfo, err error) {
-	logger.Error("error adding worker", zap.String("name", w.Name), zap.Int("ID", w.ID), zap.String("hostname", w.HostName), zap.Error(err))
+// Delete proxies that are not used by any worker; return list of remaining proxies.
+func (r *K8sResizer) deleteUnusedProxies(currentProxies []*versionedProxy, currentWorkers []versionedWorker) []*versionedProxy {
+	// Check which proxies are still needed by workers
+	neededProxies := map[int]bool{}
+	for _, w := range currentWorkers {
+		if w.usesProxy {
+			neededProxies[w.proxyID] = true
+		}
+	}
+	toKeep := []*versionedProxy{}
+	toDelete := []*versionedProxy{}
+	for _, p := range currentProxies {
+		if neededProxies[p.id] {
+			toKeep = append(toKeep, p)
+		} else {
+			toDelete = append(toDelete, p)
+		}
+	}
+
+	// Delete the proxies we don't need
+	for _, p := range toDelete {
+		err := r.deletePoolProxy(p)
+		if err != nil {
+			r.logger.Warn("Failed to delete unneeded pool proxy", zap.String("name", p.deploymentName), zap.Error(err))
+		}
+	}
+	return toKeep
 }

@@ -1,16 +1,5 @@
 # Config file for the MJS controller.
-# Copyright 2024-2025 The MathWorks, Inc.
-{{- $workerImageTag := .Values.matlabImageTag | default .Values.matlabRelease }}
-{{- $jobManagerImageTag := .Values.jobManagerImageTag | default .Values.matlabRelease }}
-{{- $workerImage := .Values.matlabImage }}
-{{- $jobManagerImage := .Values.jobManagerImage }}
-{{- if not (empty .Values.matlabPVC) }}
-  {{- $workerImage = .Values.matlabDepsImage }}
-  {{- if .Values.jobManagerUsesPVC }}
-    {{- $jobManagerImage = .Values.matlabDepsImage }}
-  {{- end -}}
-{{- end -}}
-{{- $poolProxyImageTag := .Values.poolProxyImageTag | default .Values.matlabRelease }}
+# Copyright 2024-2026 The MathWorks, Inc.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -18,91 +7,86 @@ metadata:
 data:
   {{ include "paths.controllerConfig" . }}: |
     {
-      "AdditionalMatlabPVCs": [
-      {{- $comma := "" }}
-      {{- range $matlabPVC := .Values.additionalMatlabPVCs }}
-        {{ $comma }}{{ $matlabPVC | quote }}
-        {{- $comma = "," }}
-      {{- end }}
-      ],
-      "AdditionalWorkerPVCs": {{ toJson (.Values.additionalWorkerPVCs | default dict) }},
-      "BasePort": {{ .Values.basePort | int }},
-      "CertFileName": {{ include "paths.certFile" . | quote }},
-      "CheckpointBase": {{ include "paths.databasedir" . | quote }},
-      "CheckpointPVC": {{ .Values.checkpointPVC | quote }},
-      "ClusterHost": {{ .Values.clusterHost | quote }},
-      "ControllerLogfile": {{ include "paths.controllerLog" . | quote }},
-      "DeploymentName": {{ include "resources.controller" . | quote}},
-      "EnableServiceLinks": {{ include "derived.enableServiceLinks" . }},
-      "OpenMetricsPortOutsideKubernetes": {{ .Values.openMetricsPortOutsideKubernetes }},
-      "ExtraWorkerEnvironment": {{ toJson (.Values.extraWorkerEnv | default dict) }},
       "IdleStop": {{ .Values.idleStop }},
-      "InternalClientsOnly": {{ .Values.internalClientsOnly }},
-      "JobManagerImage": {{ printf "%s:%s" $jobManagerImage $jobManagerImageTag | quote }},
-      "JobManagerImagePullPolicy": {{ .Values.jobManagerImagePullPolicy | quote }},
-      "JobManagerName": {{ .Values.jobManagerName | quote }},
-      "JobManagerCPULimit": {{ .Values.jobManagerCPULimit | quote }},
-      "JobManagerCPURequest": {{ .Values.jobManagerCPURequest | quote }},
-      "JobManagerMemoryLimit": {{ .Values.jobManagerMemoryLimit | quote }},
-      "JobManagerMemoryRequest": {{ .Values.jobManagerMemoryRequest | quote }},
-      "JobManagerGroupID": {{ .Values.jobManagerGroupID }},
-      "JobManagerNodeSelector": {{ toJson .Values.jobManagerNodeSelector }},
-      "JobManagerTolerations": {{ toJson .Values.jobManagerTolerations | quote }},
-      "JobManagerUserID": {{ .Values.jobManagerUserID }},
-      "JobManagerUsesPVC": {{ .Values.jobManagerUsesPVC }},
-      "JobManagerUID": {{ uuidv4 | quote }},
-      {{- if eq (include "derived.addLDAPCert" .) "true" -}}
-      "LDAPCertPath": {{ include "paths.ldapCert" . | quote }},
-      {{- end }}
-      "LivenessProbeFailureThreshold": {{ .Values.livenessProbeFailureThreshold | default 3 }},
-      "LivenessProbePeriod": {{ .Values.livenessProbePeriod | default  300 }},
-      "LivenessProbeTimeout": {{ .Values.livenessProbeTimeout | default 30 }},
-      "LoadBalancerName": {{ (include "resources.ingressProxy" .) | quote }},
-      "LogBase": {{ include "paths.logbase" . | quote }},
+      "LocalDebugMode": false,
+      "LogFile": {{ printf "%s/controller.log" (include "paths.logbase" .) | quote }},
       "LogLevel": {{ .Values.logLevel }},
-      "LogPVC": {{ .Values.logPVC | quote }},
-      "MatlabPVC": {{ .Values.matlabPVC | default "" | quote }},
-      "MatlabRoot": {{ include "paths.matlabroot" . | quote }},
-      "MetricsCertDir": {{ include "paths.metricsCertDir" . | quote }},
-      "MaxWorkers": {{ .Values.maxWorkers }},
+      "JobManagerName": {{ .Values.jobManagerName | quote }},
+      "JobManagerWaitPeriod": {{ .Values.startupProbePeriod | default 1 }},
+      "KubeConfig": "",
+      "KubernetesTimeoutSecs": 60,
       "MinWorkers": {{ .Values.minWorkers }},
-      "MJSDefConfigMap": {{ include "resources.mjsConfigMap" . | quote }},
-      "MJSDefDir" : {{ include "paths.configDir" . | quote }},
-      "Namespace": {{ .Release.Namespace | quote }},
-      "NetworkLicenseManager": {{ .Values.networkLicenseManager | quote }},
-      "OverrideWorkergroupConfig": {{ include "derived.overrideWorkergroupConfig" . }},
       "Period": {{ .Values.autoScalingPeriod }},
       "PreserveSecrets": {{ .Values.preserveSecrets | default false }},
-      "PortsPerWorker": {{ .Values.portsPerWorker | default 2 }},
-      "PoolProxyBasePort": {{ .Values.poolProxyBasePort }},
-      "PoolProxyCPULimit": {{ .Values.poolProxyCPULimit | quote }},
-      "PoolProxyCPURequest": {{ .Values.poolProxyCPURequest | quote }},
-      "PoolProxyImage": {{ printf "%s:%s" .Values.poolProxyImage $poolProxyImageTag | quote }},
-      "PoolProxyImagePullPolicy": {{ .Values.poolProxyImagePullPolicy | quote }},
-      "PoolProxyMemoryLimit": {{ .Values.poolProxyMemoryLimit | quote }},
-      "PoolProxyMemoryRequest": {{ .Values.poolProxyMemoryRequest | quote }},
-      "ResizePath": {{ printf "%s/toolbox/parallel/bin/resize" (include "paths.matlabroot" .) | quote }},
-      "RequireClientCertificate": {{ .Values.requireClientCertificate }},
-      "RequireScriptVerification": {{ .Values.requireScriptVerification }},
-      "SecretDir": {{ include "paths.secretDir" . | quote }},
-      "SecretFileName": {{ include "paths.secretFile" . | quote }},
-      "SecurityLevel": {{ .Values.securityLevel }},
-      "StartupProbeFailureThreshold": {{ .Values.startupProbeFailureThreshold | default 60 }},
-      "StartupProbeInitialDelay": {{ .Values.startupProbeInitialDelay | default 5 }},
-      "StartupProbePeriod": {{ .Values.startupProbePeriod | default 1 }},
-      "StopWorkerGracePeriod": {{ .Values.stopWorkerGracePeriod }},
-      "WorkerCPULimit": {{ .Values.workerCPULimit | quote }},
-      "WorkerCPURequest": {{ .Values.workerCPURequest | quote }},
-      "WorkerImage": {{ printf "%s:%s" $workerImage $workerImageTag | quote }},
-      "WorkerImagePullPolicy": {{ .Values.matlabImagePullPolicy | quote }},
-      "WorkerMemoryLimit": {{ .Values.workerMemoryLimit | quote }},
-      "WorkerMemoryRequest": {{ .Values.workerMemoryRequest | quote }},
-      "WorkerLogPVC": {{ .Values.workerLogPVC | quote }},
-      "WorkerNodeSelector": {{ toJson .Values.workerNodeSelector }},
-      "WorkerTolerations": {{ toJson .Values.workerTolerations | quote }},
-      "WorkerPassword": {{ .Values.workerPassword | quote }},
-      "WorkersPerPoolProxy": {{ .Values.workersPerPoolProxy }},
-      "WorkerUsername": {{ .Values.workerUsername | quote }},
-      "UseSecureCommunication": {{ .Values.useSecureCommunication }},
-      "UseSecureMetrics": {{ and .Values.exportMetrics .Values.useSecureMetrics }}
+      "ResizePath": {{ printf "%s/resize" (include "paths.binDir" .) | quote }},
+      "Network": {
+        "BasePort": {{ .Values.basePort }},
+        "ClusterDomain": {{ include "derived.clusterDomain" . | quote }},
+        "ClusterHost": {{ .Values.clusterHost | quote }},
+        "InternalClientsOnly": {{ .Values.internalClientsOnly }},
+        "JobManagerPort": {{ include "derived.jobManagerPort" . }},
+        "LookupPort": {{ include "derived.lookupPort" . }},
+        "MaxWorkers": {{ .Values.maxWorkers }},
+        "Namespace": {{ .Release.Namespace | quote}},
+        "OpenMetricsPortOutsideKubernetes": {{ .Values.openMetricsPortOutsideKubernetes }},
+        "ParallelServerProxyPort": {{ .Values.parallelServerProxyPort }},
+        "ParallelServerProxyUseMutualTLS": {{ .Values.parallelServerProxyUseMutualTLS }},
+        "PoolProxyBasePort": {{ .Values.poolProxyBasePort }},
+        "RequireClientCertificate": {{ .Values.requireClientCertificate }},
+        "RequireLdapCert": {{ include "derived.addLDAPCert" . }},
+        "RequireScriptVerification": {{ .Values.requireScriptVerification }},
+        "SecurityLevel": {{ .Values.securityLevel }},
+        "WorkersPerPoolProxy": {{ .Values.workersPerPoolProxy }},
+        "UsePoolProxy": {{ include "derived.usePoolProxy" . }},
+        "UseParallelServerProxy": {{ include "derived.useParallelServerProxy" . }},
+        "UseSecureCommunication": {{ .Values.useSecureCommunication }},
+        "UseSecureMetrics": {{ and .Values.exportMetrics .Values.useSecureMetrics }}
+      },
+      "ResourceNames": {
+        "AdminPasswordSecret": {{ include "resources.adminPasswordSecret" . | quote }},
+        "AdminPasswordKey": {{ include "resources.adminPasswordKey" . | quote }},
+        "CertificateFile": {{ include "paths.certFile" . | quote }},
+        "ClientMetricsSecret": {{ include "resources.clientMetricsSecret" . | quote }},
+        "ClientMetricsCertFile": {{ include "paths.clientMetricsCert" . | quote }},
+        "ClientMetricsKeyFile": {{ include "paths.clientMetricsKey" . | quote }},
+        "Controller": {{ include "resources.controller" . | quote }},
+        "JobManagerContainer": {{ include "resources.jobManager" . | quote }},
+        "JobManagerLabel": {{ printf "app=%s" (include "resources.jobManager" .) | quote }},
+        "JobManagerService": {{ include "resources.jobManager" . | quote }},
+        "LdapSecret": {{ include "resources.ldapSecret" . | quote }},
+        "LdapCertFile": {{ include "paths.ldapCert" . | quote }},
+        "LoadBalancer": {{ include "resources.ingressProxy" . | quote }},
+        "MetricsSecret": {{ include "resources.metricsSecret" . | quote }},
+        "MetricsCaCertFile": {{ include "paths.metricsCaCert" . | quote }},
+        "MetricsCertFile": {{ include "paths.metricsCert" . | quote }},
+        "MetricsKeyFile": {{ include "paths.metricsKey" . | quote }},
+        "ParallelServerProxySecret": {{ include "resources.parallelServerProxySecret" . | quote }},
+        "PoolProxyLabel": {{ printf "app=%s" (include "resources.poolProxy" .) | quote }},
+        "PoolProxyTemplate": {{ include "resources.poolProxyTemplate" . | quote }},
+        "ProfileKey": {{ include "resources.profileKey" . | quote }},
+        "ProfileSecret": {{ include "resources.profileSecret" . | quote }},
+        "ProfileSecretPre26a": {{ include "resources.profileSecretPre26a" . | quote }},
+        "SharedSecret": {{ include "resources.sharedSecret" . | quote }},
+        "SharedSecretDir": {{ include "paths.secretDir" . | quote }},
+        "SharedSecretFile": {{ include "paths.secretFile" . | quote }},
+        "TemplateFile": {{ include "resources.templateFile" . | quote }},
+        "WorkerLabel": {{ printf "app=%s" (include "resources.worker" .) | quote }},
+        "WorkerTemplate": {{ include "resources.workerTemplate" . | quote }}
+      },
+      "AnnotationKeys": {
+        "CertVolume": {{ include "annotations.certVolume" . | quote }},
+        "LogDir": {{ include "annotations.logDir" . | quote }},
+        "PoolProxyBasePort": {{ include "annotations.poolProxyBasePort" . | quote }},
+        "PoolProxyID": {{ include "annotations.poolProxyID" . | quote }},
+        "PoolProxyPrefix": {{ include "annotations.poolProxyPrefix" . | quote }},
+        "SecretName": {{ include "annotations.secretName" . | quote }},
+        "TemplateChecksum": {{ include "annotations.templateChecksum" . | quote }},
+        "UsePoolProxy": {{ include "annotations.usePoolProxy" . | quote }},
+        "UseSecureCommunication": {{ include "annotations.useSecureCommunication" . | quote }},
+        "WorkerDomain": {{ include "annotations.workerDomain" . | quote }},
+        "WorkerID": {{ include "annotations.workerID" . | quote }},
+        "WorkerName": {{ include "annotations.workerName" . | quote }},
+        "WorkerPrefix": {{ include "annotations.workerPrefix" . | quote }},
+        "WorkersPerPoolProxy": {{ include "annotations.workersPerPoolProxy" . | quote }}
+      }
     }

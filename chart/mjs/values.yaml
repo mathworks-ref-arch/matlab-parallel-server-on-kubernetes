@@ -1,8 +1,16 @@
 # Default values for MATLAB Job Scheduler (MJS) in Kubernetes.
-# Copyright 2024-2025 The MathWorks, Inc.
+# Copyright 2024-2026 The MathWorks, Inc.
 
-# Release number of the MATLAB version to use
-matlabRelease: "r2024a"
+# Specify the release number of the MATLAB version to use with a lowercase "r" in your custom values.yaml file.
+# matlabRelease: "r2026a"
+
+# Specify the maximum number of workers that the cluster can automatically resize to in your custom values.yaml file.
+# maxWorkers: 32
+
+# Specify the names of the PVCs for these parameters in your custom values.yaml file.
+# checkpointPVC: "checkpoint-pvc" # Name of a PVC where MATLAB Parallel Server stores persistent data related to the job manager
+# logPVC: "log-pvc" # Name of a PVC where MATLAB Parallel Server stores job manager logs
+# workerLogPVC: "worker-log-pvc" # Name of a PVC where MATLAB Parallel Server stores worker logs
 
 # Image for the MATLAB workers
 matlabImage: "ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-worker-image"
@@ -19,14 +27,27 @@ controllerImage: "ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-cont
 controllerImageTag: ""
 controllerImagePullPolicy: "IfNotPresent"
 
-# Image containing HAproxy
-haproxyImage: "haproxy"
+# Image containing the parallel server proxy.
+# Only used if the cluster supports MATLAB release R2026a or later.
+parallelServerProxyImage: "ghcr.io/mathworks/parallel-server-proxy:v1.0.0"
+parallelServerProxyImagePullPolicy: "IfNotPresent"
+parallelServerProxyPort: 1080
+parallelServerProxyUseMutualTLS: true
+
+# Image containing HAproxy.
+# Only used if the cluster supports MATLAB releases older than R2026a.
+haproxyImage: "haproxy:3.3"
 haproxyImagePullPolicy: "IfNotPresent"
 
-# Image containing the pool proxy
+# Image containing the pool proxy.
+# Only used if the cluster supports MATLAB releases older than R2026a.
 poolProxyImage: "containers.mathworks.com/matlab-parallel-server-k8s/parallel-server-proxy-image"
 poolProxyImageTag: ""
 poolProxyImagePullPolicy: "IfNotPresent"
+
+# Backwards compatibility options
+additionalSupportedReleases: [] # Older MATLAB releases this cluster supports, specified as an array
+additionalMatlabPVCs: [] # Names of PersistentVolumeClaims containing installations of older MATLAB Parallel Server releases, specified as an array
 
 # MJS settings
 minWorkers: 0 # Minimum number of workers to resize the cluster to
@@ -42,20 +63,21 @@ adminUser: "admin" # Username of the cluster administrator
 ldapURL: "" # URL of an LDAP server to authenticate user credentials
 ldapSecurityPrincipalFormat: "" # Format of a security principal (user) for your LDAP server
 ldapSynchronizationIntervalSecs: 1800 # Frequency at which the cluster synchronizes with the LDAP server
-exportMetrics: false # If true, export cluster monitoring metrics from the job manager
+exportMetrics: false # If true, export cluster monitoring metrics from the job manager. If false, openMetricsPortOutsideKubernetes must also be false
 metricsPort: 8001 # Port for exporting metrics
 useSecureMetrics: true # If true, the job manager exports metrics on an encrypted HTTPS server
-openMetricsPortOutsideKubernetes: false # If true, the job manager's metrics server is exposed outside the Kubernetes cluster
+openMetricsPortOutsideKubernetes: false # If true, the job manager's metrics server is exposed outside the Kubernetes cluster. If true, exportMetrics must also be true, and internalClientsOnly must be false
 
 # Resource requests and limits
 workerCPULimit: "" # CPU limit for each worker process
 workerCPURequest: 2 # CPU request for each worker process
 workerMemoryLimit: "8Gi" # Memory limit for each worker process
 workerMemoryRequest: "8Gi" # Memory request for each worker process
+numGPUs: 0 # Number of GPUs to request for each worker process
 jobManagerCPULimit: "" # CPU limit for the job manager
 jobManagerCPURequest: 1 # CPU request for the job manager
 jobManagerMemoryLimit: "" # Memory limit for the job manager
-jobManagerMemoryRequest: "4Gi" # Memory request for the job manager
+jobManagerMemoryRequest: "2Gi" # Memory request for the job manager
 poolProxyCPULimit: "" # CPU limit for each parallel pool proxy process
 poolProxyCPURequest: "0.5" # CPU request for each parallel pool proxy process
 poolProxyMemoryLimit: "" # Memory limit for each parallel pool proxy process
@@ -68,6 +90,10 @@ haproxyCPULimit: "" # CPU limit for the HAProxy pod
 haproxyCPURequest: "100m" # CPU request for the HAProxy pod
 haproxyMemoryLimit: "" # Memory limit for the HAProxy pod
 haproxyMemoryRequest: "256Mi" # Memory request for the HAProxy pod
+parallelServerProxyCPULimit: "" # CPU limit for the parallel server proxy pod
+parallelServerProxyCPURequest: "100m" # CPU request for the parallel server proxy pod
+parallelServerProxyMemoryLimit: "" # Memory limit for the parallel server proxy pod
+parallelServerProxyMemoryRequest: "256Mi" # Memory request for the parallel server proxy pod
 
 # Node settings
 jobManagerNodeSelector: {} # Node selector for the job manager, specified as key-value pairs
@@ -83,6 +109,7 @@ stopWorkerGracePeriod: 60 # Grace period in seconds for running stopworker
 # Network settings
 autoCreateLoadBalancer: true # Flag to automatically create a Kubernetes load balancer to expose MATLAB Job Scheduler to MATLAB clients outside the cluster
 loadBalancerAnnotations: {} # Annotations to use for the load balancer
+loadBalancerSourceRanges: [] # List of allowed CIDR blocks for traffic to the load balancer if the load balancer is managed by a cloud provider
 
 # Parallel pool proxy settings
 poolProxyBasePort: 30000 # Base port for parallel pool proxies
@@ -93,7 +120,7 @@ workerUsername: matlab # Username that MATLAB Parallel Server uses to run jobs
 workerPassword: matlab # Password of the username that MATLAB Parallel Server uses to run jobs
 jobManagerUserID: 0 # ID of the user to run the job manager pod as
 jobManagerGroupID: 0 # Group ID of the user to run the job manager pod as
-internalClientsOnly: false # Flag to allow only MATLAB clients running inside the Kubernetes cluster to connect to the MATLAB Job Scheduler
+internalClientsOnly: false # Flag to allow only MATLAB clients running inside the Kubernetes cluster to connect to the MATLAB Job Scheduler. If this is true, openMetricsPortOutsideKubernetes must be false
 
 # Licensing settings
 networkLicenseManager: "" # Address of a network license manager with format port@host
@@ -103,15 +130,6 @@ useOnlineLicensing: false # Set to true to use Online Licensing
 matlabDepsImage: "mathworks/matlab-deps"
 matlabPVC: "" # Name of a PVC that contains a MATLAB Parallel Server installation to use. If this is set, the matlabDepsImage parameter is used for the worker containers instead of the matlabImage parameter
 jobManagerUsesPVC: false # If true, the job manager container mounts the MATLAB Parallel Server installation from the PVC rather than using the jobManagerImage parameter
-additionalMatlabPVCs: [] # Names of PersistentVolumeClaims containing installations of older MATLAB Parallel Server releases, specified as an array
 
 # Worker pod settings
-additionalWorkerPVCs: {} # Additional PersistentVolumeClaims to mount on worker pods, specifed as a map of claim names to mount paths
-
-# Specify the maximum number of workers that the cluster can automatically resize to in your custom values.yaml file.
-# maxWorkers: 32
-
-# Specify the names of the PVCs for these parameters in your custom values.yaml file.
-# checkpointPVC: "checkpoint-pvc" # Name of a PVC where MATLAB Parallel Server stores persistent data related to the job manager
-# logPVC: "log-pvc" # Name of a PVC where MATLAB Parallel Server stores job manager logs
-# workerLogPVC: "worker-log-pvc" # Name of a PVC where MATLAB Parallel Server stores worker logs
+additionalWorkerPVCs: {} # Additional PersistentVolumeClaims to mount on worker pods, specified as a map of claim names to mount paths

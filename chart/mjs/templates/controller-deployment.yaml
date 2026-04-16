@@ -1,5 +1,5 @@
 # Deployment for the MJS controller.
-# Copyright 2024 The MathWorks, Inc.
+# Copyright 2024-2026 The MathWorks, Inc.
 {{- $controllerImageTag := .Values.controllerImageTag | default .Chart.AppVersion }}
 {{- $name := include "resources.controller" . }}
 apiVersion: apps/v1
@@ -11,10 +11,14 @@ spec:
     matchLabels:
       app: {{ $name }}
   replicas: 1
+  strategy:
+    type: Recreate # Allow previous controller to finish before starting a new one
   template:
     metadata:
       labels:
         app: {{ $name }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/controller-configmap.yaml") . | sha256sum }} # Restart pod if config map changes
     spec:
       # Controller requires elevated Kubernetes permissions
       serviceAccountName: {{ include "resources.controllerServiceAccount" . }}

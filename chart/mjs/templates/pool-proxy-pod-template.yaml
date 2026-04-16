@@ -1,0 +1,84 @@
+{{- if (eq (include "derived.usePoolProxy" . ) "true" ) }}
+# Template for pool proxies.
+# The pods themselves are not created by the Helm chart, but instead dynamically 
+# created and destroyed on demand by the MJS controller.
+# Copyright 2025-2026 The MathWorks, Inc.
+{{- $name := include "resources.poolProxy" . }}
+{{- $imageTag := .Values.poolProxyImageTag | default (include "derived.computedPoolProxyImageTag" . ) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "resources.poolProxyTemplate" . }}
+data:
+  # Define pod template
+  {{ include "resources.templateFile" . }}: |
+    metadata:
+      labels:
+        app: {{ $name }}
+      annotations:
+        # Settings used to derive configuration for a specific proxy pod
+        {{ include "annotations.certVolume" .}}: {{ include "resources.proxyCertVol" . | quote }}
+        {{ include "annotations.logDir" . }}: {{ include "paths.logbase" . | quote }}
+        {{ include "annotations.poolProxyBasePort" . }}: {{ .Values.poolProxyBasePort | quote }}
+        {{ include "annotations.poolProxyPrefix" . }}: {{ include "resources.poolProxyPrefix" . | quote }}
+        {{ include "annotations.useSecureCommunication" . }}: {{ .Values.useSecureCommunication | quote }}
+
+    spec:
+      # If set to false, disable creation of environment variables for services
+      enableServiceLinks: {{ include "derived.enableServiceLinks" . }}
+
+      # Set selector and tolerations
+      nodeSelector: {{ toJson .Values.workerNodeSelector }}
+      tolerations: {{ toJson .Values.workerTolerations }}
+
+      terminationGracePeriodSeconds: 5
+
+      containers:
+      - name: {{ $name }}
+        image: {{ printf "%s:%s" .Values.poolProxyImage $imageTag }}
+        imagePullPolicy: {{ .Values.poolProxyImagePullPolicy }}
+        args:
+        - "--loglevel"
+        - {{ .Values.logLevel | quote }}
+        {{- if .Values.useSecureCommunication }}
+        - "--certificate"
+        - {{ printf "%s/%s" (include "paths.proxyCertDir" .) (include "paths.certFile" .) | quote }}
+        {{- end  }}
+        # The --logfile and --port arguments will be added dynamically by the controller
+
+        # Set optional resource requests and limits
+        resources:
+          requests:
+            {{- if .Values.poolProxyCPURequest }}
+            cpu: {{ .Values.poolProxyCPURequest }}
+            {{- end }}
+            {{- if .Values.poolProxyMemoryRequest }}
+            memory: {{ .Values.poolProxyMemoryRequest }}
+            {{- end }}
+          limits:
+            {{- if .Values.poolProxyCPULimit }}
+            cpu: {{ .Values.poolProxyCPULimit }}
+            {{- end }}
+            {{- if .Values.poolProxyMemoryLimit }}
+            memory: {{ .Values.poolProxyMemoryLimit }}
+            {{- end }}
+
+        volumeMounts:
+        {{- $logVolName := "log-vol" }}
+        {{- if .Values.workerLogPVC }}
+        - name: {{ $logVolName }}
+          mountPath: {{ include "paths.logbase" . }}
+        {{- end }}
+        {{- if .Values.useSecureCommunication }}
+        - name: {{ include "resources.proxyCertVol" . }}
+          mountPath: {{ include "paths.proxyCertDir" . }}
+          readOnly: true
+        {{- end }}
+
+      volumes:
+      {{- if .Values.workerLogPVC }}
+      - name: {{ $logVolName }}
+        persistentVolumeClaim:
+          claimName: {{ .Values.workerLogPVC }}
+      {{- end }}
+  {{- end }}

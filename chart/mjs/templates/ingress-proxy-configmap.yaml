@@ -1,6 +1,8 @@
-{{- if not .Values.internalClientsOnly }}
-# HAproxy config file with rules for mapping to the job manager or pool proxies based on TCP port.
-# Copyright 2024 The MathWorks, Inc.
+{{- if (eq (include "derived.useHAProxy" . ) "true" ) }}
+# HAproxy config file with rules for mapping to the job manager or proxies based on TCP port.
+# Copyright 2024-2026 The MathWorks, Inc.
+{{- $addrSuffix := printf "%s.svc.%s" .Release.Namespace (include "derived.clusterDomain" .) }}
+{{- $jobManagerAddr := printf "%s.%s" (include "resources.jobManager" .) $addrSuffix }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,39 +12,69 @@ data:
     global
         log stdout local0
     defaults
-        default-server init-addr last,libc,none
+        default-server init-addr none
         log global
         option tcplog
         mode tcp
         timeout connect 30s
         timeout client 300s
         timeout server 300s
+    resolvers kube_dns
+        parse-resolv-conf # Use /etc/resolve.conf (CoreDNS)
+        resolve_retries 3 # Retry failed DNS queries
+        timeout retry 1s
+        hold valid 10s # Avoid flapping if a service is temporarily down (e.g. during pod restarts)
+        hold nx 5s
+        hold other 5s
+
+{{- if (eq (include "derived.useHAProxyForMATLABClients" . ) "true" ) }}
 
     # Rules for proxying traffic to the job manager pod.
+    backend back-mjs-job-manager-lookup
+        server mjs-job-manager-lookup {{ $jobManagerAddr }}:{{ include "derived.lookupPort" . }} resolvers kube_dns
+    backend back-mjs-job-manager-jm
+        server mjs-job-manager-jm {{ $jobManagerAddr }}:{{ include "derived.jobManagerPort" . }} resolvers kube_dns
     frontend front-lookup
         bind {{ printf "*:%d" (include "derived.lookupPort" . | int) }}
-        default_backend back-mjs-job-manager
+        default_backend back-mjs-job-manager-lookup
     frontend front-jobmanager
         bind {{ printf "*:%d" (include "derived.jobManagerPort" . | int) }}
-        default_backend back-mjs-job-manager
-    backend back-mjs-job-manager
-        server mjs-job-manager mjs-job-manager
-    {{- if and .Values.exportMetrics .Values.openMetricsPortOutsideKubernetes }}
+        default_backend back-mjs-job-manager-jm
+{{ end -}}
+
+{{- if (eq (include "derived.useParallelServerProxy" . ) "true" ) }}
+{{- $parallelServerProxy := include "resources.parallelServerProxy" . }}
+{{- $parallelServerProxyAddr := printf "%s.%s" $parallelServerProxy $addrSuffix }}
+    # Rules for proxying traffic to the parallel server proxy
+    backend back-parallel-server-proxy
+        server {{ $parallelServerProxy }} {{ $parallelServerProxyAddr }}:{{ .Values.parallelServerProxyPort }} resolvers kube_dns
+    frontend front-parallel-server-proxy
+        bind {{ printf "*:%d" (.Values.parallelServerProxyPort | int) }}
+        default_backend back-parallel-server-proxy
+{{ end -}}
+
+{{- if and .Values.exportMetrics .Values.openMetricsPortOutsideKubernetes }}
+    # Rules for proxying traffic to the job manager's metrics server
+    backend back-mjs-job-manager-metrics
+        server mjs-job-manager-metrics {{ $jobManagerAddr }}:{{ .Values.metricsPort }} resolvers kube_dns
     frontend front-jobmanager-metrics
         bind {{ printf "*:%d" (.Values.metricsPort | int) }}
-        default_backend back-mjs-job-manager
-    {{- end }}
+        default_backend back-mjs-job-manager-metrics
+{{- end }}
 
+{{- if (eq (include "derived.usePoolProxy" . ) "true" ) }}
     # Rules for proxying traffic to the parallel pool proxies.
     # Each parallel pool proxy has a unique port, which should be mapped to the
     # corresponding Kubernetes service for that proxy.
     {{- range untilStep 0 (include "derived.numProxies" . | int) 1 }}
     {{- $portNum := add $.Values.poolProxyBasePort . | int }}
     {{- $poolProxyName := printf "%s-%d" (include "resources.poolProxy" .) (add . 1) }}
+    {{- $poolProxyAddr := printf "%s.%s" $poolProxyName $addrSuffix }}
     frontend front-{{ $poolProxyName }}
         bind {{ printf "*:%d" $portNum }}
         default_backend back-{{ $poolProxyName }}
     backend back-{{ $poolProxyName }}
-        server {{ $poolProxyName }} {{ $poolProxyName }}
+        server {{ $poolProxyName }} {{ $poolProxyAddr }}:{{ $portNum }} resolvers kube_dns
     {{ end -}}
+{{ end -}}
 {{ end -}}

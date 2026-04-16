@@ -1,7 +1,7 @@
-{{- if not .Values.internalClientsOnly }}
+{{- if (eq (include "derived.useHAProxy" . ) "true" ) }}
 # Deployment running HAproxy; this proxies incoming connections to the job manager
 # or workers via a single external load balancer.
-# Copyright 2024 The MathWorks, Inc.
+# Copyright 2024-2025 The MathWorks, Inc.
 {{- $name := include "resources.ingressProxy" . }}
 apiVersion: apps/v1
 kind: Deployment
@@ -16,6 +16,8 @@ spec:
     metadata:
       labels:
         app: {{ $name }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/ingress-proxy-configmap.yaml") . | sha256sum }} # Restart pod if config map changes
     spec:
       # If set to false, disable creation of environment variables for services
       enableServiceLinks: {{ include "derived.enableServiceLinks" . }}

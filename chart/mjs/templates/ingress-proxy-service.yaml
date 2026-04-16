@@ -1,6 +1,6 @@
 {{- if and .Values.autoCreateLoadBalancer (not .Values.internalClientsOnly) }}
 # LoadBalancer Service for routing traffic from outside the Kubernetes cluster.
-# Copyright 2024 The MathWorks, Inc.
+# Copyright 2024-2025 The MathWorks, Inc.
 {{- $name := include "resources.ingressProxy" . }}
 apiVersion: v1
 kind: Service
@@ -11,9 +11,12 @@ metadata:
   annotations: {{ toJson .Values.loadBalancerAnnotations }}
 spec:
   type: LoadBalancer
+  loadBalancerSourceRanges: {{ .Values.loadBalancerSourceRanges | toJson }}
   selector:
    app: {{ $name }}
   ports:
+{{- if (eq (include "derived.useHAProxy" .) "true" )}}
+{{- if (eq (include "derived.useHAProxyForMATLABClients" . ) "true" ) }}
   # Job manager ports
   - name: "tcp-lookup"
     protocol: TCP
@@ -25,7 +28,19 @@ spec:
     appProtocol: TCP
     port: {{ include "derived.jobManagerPort" . }}
     targetPort: {{ include "derived.jobManagerPort" . }}
+{{ end -}}
+{{ end -}}
 
+{{- if (eq (include "derived.useParallelServerProxy" . ) "true" ) }}
+  # Parallel server proxy port
+  - name: "tcp-parallel-server-proxy"
+    protocol: TCP
+    appProtocol: TCP
+    port: {{ .Values.parallelServerProxyPort }}
+    targetPort: {{ .Values.parallelServerProxyPort }}
+{{ end -}}
+
+{{- if (eq (include "derived.usePoolProxy" . ) "true" ) }}
   # Pool proxy ports
   {{- range untilStep 0 (include "derived.numProxies" . | int) 1 }}
   {{- $poolProxyPort := add $.Values.poolProxyBasePort . }}
@@ -35,12 +50,14 @@ spec:
     port: {{ $poolProxyPort }}
     targetPort: {{ $poolProxyPort }}
   {{ end -}}
-  {{- if and .Values.exportMetrics .Values.openMetricsPortOutsideKubernetes }}
+{{ end -}}
+
+{{- if and .Values.exportMetrics .Values.openMetricsPortOutsideKubernetes }}
   # Job manager metrics port
   - name: {{ printf "metrics-%.0f" .Values.metricsPort }}
     protocol: TCP
     appProtocol: TCP
     port: {{ .Values.metricsPort }}
     targetPort: {{ .Values.metricsPort }}
-  {{- end }}
+{{- end }}
 {{ end -}}
