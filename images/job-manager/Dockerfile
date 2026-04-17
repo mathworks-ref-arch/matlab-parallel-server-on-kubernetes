@@ -4,7 +4,7 @@
 # Use the optional build argument to customize the version of MATLAB the MATLAB Package Manager installs.
 
 # Here is an example docker build command with the optional build argument.
-# docker build --build-arg MATLAB_RELEASE=r2025a -t mjs-job-manager .
+# docker build --build-arg MATLAB_RELEASE=r2026a -t mjs-job-manager .
 
 # To specify which MATLAB release to install in the container, edit the value of the MATLAB_RELEASE argument.
 # Use lowercase to specify the release, for example: ARG MATLAB_RELEASE=r2026a
