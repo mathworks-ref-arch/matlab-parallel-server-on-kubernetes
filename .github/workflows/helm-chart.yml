@@ -46,7 +46,7 @@ jobs:
         uses: azure/setup-helm@v4
 
       - name: Lint chart
-        run: helm lint ${CHART_DIR} --set maxWorkers=4,matlabPVC=test,checkpointPVC=test,logPVC=test,workerLogPVC=test
+        run: helm lint ${CHART_DIR} --set maxWorkers=4,matlabPVC=test,checkpointPVC=test,logPVC=test,workerLogPVC=test,matlabRelease=r2024a
 
       - name: Check chart versions
         run: grep "version. ${{ github.event.release.tag_name }}" ${CHART_DIR}/Chart.yaml && grep "appVersion. ${{ github.event.release.tag_name }}" ${CHART_DIR}/Chart.yaml # Use "." (any character) rather than ":", since ":" breaks YAML parser
