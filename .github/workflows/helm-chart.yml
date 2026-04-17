@@ -55,7 +55,7 @@ jobs:
         run: helm package ${CHART_DIR} --version ${{ github.event.release.tag_name }} --app-version ${{ github.event.release.tag_name }}
 
       - name: Login to GitHub Container Registry
-        run: echo ${{ secrets.HELM_TOKEN }} | helm registry login ghcr.io/mathworks-ref-arch --username hannahpullen --password-stdin
+        run: echo ${{ secrets.HELM_TOKEN }} | helm registry login ghcr.io --username hannahpullen --password-stdin
 
       - name: Upload chart
         run: helm push mjs-${{ github.event.release.tag_name }}.tgz oci://ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s
