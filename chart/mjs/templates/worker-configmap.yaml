@@ -24,6 +24,7 @@ data:
     REQUIRE_SCRIPT_VERIFICATION={{ .Values.requireScriptVerification }}
     SECURITY_LEVEL={{ .Values.securityLevel }}
     SHARED_SECRET_FILE={{ include "paths.secretPath" . }}
+    USE_ONLINE_LICENSING={{ .Values.useOnlineLicensing }}
     {{- if .Values.javaPVC }}
     MJS_JAVA={{ include "paths.javaDir" . }}
     {{- end }}
