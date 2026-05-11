@@ -24,29 +24,35 @@ import (
 func TestGetResizeStatusCommand(t *testing.T) {
 	conf := request.ExecConfig{
 		BasePort:                  27350,
+		MatlabRootFile:            "/tmp/matlab_root",
 		RequireScriptVerification: false,
-		ResizePath:                "/path/to/resize",
+		ResizePath:                "toolbox/parallel/bin/resize",
 		TimeoutSecs:               10,
 	}
 	cmd := request.GetResizeStatusCommand(conf)
-	require.Len(t, cmd, 6, "Unexpected command length")
-	verifyResizeStatusCommand(t, conf, cmd)
+	require.Len(t, cmd, 3, "Command should be [sh, -c, <script>]")
+	assert.Equal(t, "sh", cmd[0])
+	assert.Equal(t, "-c", cmd[1])
+	expected := "MATLAB_ROOT=$(cat /tmp/matlab_root) && timeout 10 \"${MATLAB_ROOT}/toolbox/parallel/bin/resize\" status -baseport 27350"
+	assert.Equal(t, expected, cmd[2])
 }
 
 // Test construction of the resize status command with script verification turned on
 func TestGetResizeStatusCommandWithVerification(t *testing.T) {
 	conf := request.ExecConfig{
 		BasePort:                  3000,
+		MatlabRootFile:            "/tmp/matlab_root",
 		RequireScriptVerification: true,
-		ResizePath:                "/path/to/resize",
+		ResizePath:                "toolbox/parallel/bin/resize",
 		SecretPath:                "/path/to/secret",
 		TimeoutSecs:               2,
 	}
 	cmd := request.GetResizeStatusCommand(conf)
-	require.Len(t, cmd, 8, "Unexpected command length")
-	verifyResizeStatusCommand(t, conf, cmd)
-	assert.Equal(t, "-secretfile", cmd[6], "Command should contain secret file arg")
-	assert.Equal(t, conf.SecretPath, cmd[7], "Command should contain path to secret file arg")
+	require.Len(t, cmd, 3, "Command should be [sh, -c, <script>]")
+	assert.Equal(t, "sh", cmd[0])
+	assert.Equal(t, "-c", cmd[1])
+	expected := "MATLAB_ROOT=$(cat /tmp/matlab_root) && timeout 2 \"${MATLAB_ROOT}/toolbox/parallel/bin/resize\" status -baseport 3000 -secretfile /path/to/secret"
+	assert.Equal(t, expected, cmd[2])
 }
 
 func TestGetRequestNoWorkers(t *testing.T) {
@@ -219,18 +225,10 @@ func newWithMock(t *testing.T, exitFunc func(error)) (controller.ResizeRequestGe
 	return request.NewPodResizeRequestGetter(testConfig, client, exitFunc, logger), client
 }
 
-func verifyResizeStatusCommand(t *testing.T, conf request.ExecConfig, cmd []string) {
-	assert.Equal(t, "timeout", cmd[0], "Command should start with timeout")
-	assert.Equal(t, fmt.Sprintf("%d", conf.TimeoutSecs), cmd[1], "Command should include timeout in seconds")
-	assert.Equal(t, conf.ResizePath, cmd[2], "Command should include path to resize script")
-	assert.Equal(t, "status", cmd[3], "Command should include 'status' subcommand")
-	assert.Equal(t, "-baseport", cmd[4], "Command should include baseport arg")
-	assert.Equal(t, fmt.Sprintf("%d", conf.BasePort), cmd[5], "Command should include baseport value")
-}
-
 var testConfig = request.ExecConfig{
 	TimeoutSecs:         30,
-	ResizePath:          "/path/to/resize/script",
+	MatlabRootFile:      "/tmp/matlab_root",
+	ResizePath:          "toolbox/parallel/bin/resize",
 	BasePort:            8080,
 	JobManagerContainer: "my-jm-container",
 	JobManagerLabel:     "app=job-manager",

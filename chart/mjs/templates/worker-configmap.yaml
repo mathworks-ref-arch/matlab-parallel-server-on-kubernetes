@@ -1,7 +1,6 @@
 # ConfigMap containing scripts for the worker pods.
 # Copyright 2024-2026 The MathWorks, Inc.
 {{- $localMJSDef := "/tmp/mjs_def.sh" }}
-{{- $binDir := include "paths.binDir" . }}
 {{- $startFile := "/tmp/worker-started" }}
 {{- $stopFile := "/tmp/worker-stopped" }}
 {{- $additionalMatlabRoots := list }}
@@ -37,6 +36,8 @@ data:
     # Script to run on worker pods
     set -euo pipefail
 
+{{ include "scripts.setMatlabRoot" . | indent 4 }}
+
     # Set up the mjs_def file
     cp {{ printf "%s/mjs_def.sh" (include "paths.configDir" .) }} {{ $localMJSDef }}
     LOGBASE={{ include "paths.logbase" . }}/${WORKER_NAME}
@@ -58,15 +59,15 @@ data:
     ulimit -n {{ .Values.fileDescriptorUlimit | default 4096 }}
 
     # Start the MJS service
-    {{ printf "%s/mjs" $binDir }} start -mjsdef {{ $localMJSDef }} -loglevel {{ .Values.logLevel }} -disablereliableconnections 2>&1 | tee -a ${SCRIPTLOGFILE}
+    ${BIN_DIR}/mjs start -mjsdef {{ $localMJSDef }} -loglevel {{ .Values.logLevel }} -disablereliableconnections 2>&1 | tee -a ${SCRIPTLOGFILE}
 
     # Start the worker
-    {{- $workerCmd := printf "%s/startworker -jobmanager \"%s\" -jobmanagerhost \"%s\" -name \"${WORKER_NAME}\" -baseport %d -scriptlogfile ${SCRIPTLOGFILE}" $binDir .Values.jobManagerName (include "resources.jobManager" .) (.Values.basePort | int) }}
+    WORKER_CMD="${BIN_DIR}/startworker -jobmanager \"{{ .Values.jobManagerName }}\" -jobmanagerhost \"{{ include "resources.jobManager" . }}\" -name \"${WORKER_NAME}\" -baseport {{ .Values.basePort | int }} -scriptlogfile ${SCRIPTLOGFILE}"
     {{- if .Values.requireScriptVerification }}
-      {{- $workerCmd = printf "%s -secretfile \"%s\"" $workerCmd (include "paths.secretPath" .) }}
+    WORKER_CMD="${WORKER_CMD} -secretfile \"{{ include "paths.secretPath" . }}\""
     {{- end }}
-    echo "$(date) | Running startworker command: {{ $workerCmd }}" | tee -a ${SCRIPTLOGFILE}
-    {{ $workerCmd }} 2>&1 | tee -a ${SCRIPTLOGFILE}
+    echo "$(date) | Running startworker command: ${WORKER_CMD}" | tee -a ${SCRIPTLOGFILE}
+    eval ${WORKER_CMD} 2>&1 | tee -a ${SCRIPTLOGFILE}
 
     # Add a file to indicate that startworker is complete
     touch {{ $startFile }}
@@ -90,12 +91,16 @@ data:
       sleep 1
     done
 
+    # Read the MATLAB root directory determined by the startup script
+    MATLAB_ROOT=$(cat {{ include "paths.matlabRootFile" . }})
+    BIN_DIR="${MATLAB_ROOT}/toolbox/parallel/bin"
+
     # Stop the worker
-    {{- $stopCmd := printf "%s/stopworker -clean -name \"${WORKER_NAME}\" -baseport %d -scriptlogfile ${SCRIPTLOGFILE}" $binDir (.Values.basePort | int) }}
+    STOP_CMD="${BIN_DIR}/stopworker -clean -name \"${WORKER_NAME}\" -baseport {{ .Values.basePort | int }} -scriptlogfile ${SCRIPTLOGFILE}"
     {{- if .Values.requireScriptVerification }}
-      {{- $stopCmd = printf "%s -secretfile \"%s\"" $stopCmd (include "paths.secretPath" .) }}
+    STOP_CMD="${STOP_CMD} -secretfile \"{{ include "paths.secretPath" . }}\""
     {{- end }}
-    {{ $stopCmd }} 2>&1 | tee -a ${SCRIPTLOGFILE}
+    eval ${STOP_CMD} 2>&1 | tee -a ${SCRIPTLOGFILE}
 
     # Trigger the container to exit
     echo "$(date) | Stopped worker. Touching stop file so main container process can exit." | tee -a ${SCRIPTLOGFILE}

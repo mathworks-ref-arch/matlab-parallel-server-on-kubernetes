@@ -26,10 +26,11 @@ type ControllerConfig struct {
 	JobManagerWaitPeriod  int    // Retry period when waiting for the job manager pod to be ready
 	KubeConfig            string // Kubeconfig file to use if running in local debug mode
 	KubernetesTimeoutSecs int    // Timeout for Kubernetes API operations
+	MatlabRootFile        string // Path to the file containing the detected MATLAB root on the job manager pod
 	MinWorkers            int    // Minimum number of worker pods to maintain
 	Period                int    // Period for the controller loop
 	PreserveSecrets       bool   // If true, secrets created during controller setup will not be deleted when the controller is stopped
-	ResizePath            string // Path to the "resize" script on the job manager pod
+	ResizePath            string // Path to the "resize" script relative to MATLAB root on the job manager pod
 }
 
 // Configuration for cluster networking
@@ -47,7 +48,6 @@ type NetworkConfig struct {
 	ParallelServerProxyUseMutualTLS  bool   // Set to true if the parallel server proxy uses mutual TLS
 	PoolProxyBasePort                int    // Base port to use for pool proxies
 	RequireClientCertificate         bool   // Set to true if MJS requires MATLAB clients to have a certificate
-	RequireLdapCert                  bool   // Set to true if MJS is configured to use secure LDAP
 	RequireScriptVerification        bool   // Set to true if MJS is configured to require verification of admin operations
 	SecurityLevel                    int    // MJS security level
 	WorkersPerPoolProxy              int    // Number of workers that can be served by a single pool proxy
@@ -59,8 +59,6 @@ type NetworkConfig struct {
 
 // Names of Kubernetes resources that the controller interacts with
 type ResourceNames struct {
-	AdminPasswordSecret       string // Name of secret containing the MJS admin password
-	AdminPasswordKey          string // Key containing the admin password in the secret
 	CertificateFile           string // Name of mounted certificate file
 	ClientMetricsSecret       string // Name of secret containing client metrics certificates
 	ClientMetricsCertFile     string // Name of certificate file in client metrics secret
@@ -69,8 +67,6 @@ type ResourceNames struct {
 	JobManagerContainer       string // Name of the container in which the job manager runs
 	JobManagerLabel           string // Label that can be used to identify the job manager pod
 	JobManagerService         string // Name of the job manager service
-	LdapSecret                string // Name of secret containing LDAP certificates
-	LdapCertFile              string // Name of certificate file in LDAP secret
 	LoadBalancer              string // Name of the load balancer service
 	MetricsSecret             string // Name of secret containing certificates for the job manager metrics server
 	MetricsCaCertFile         string // Name of CA certificate file in metrics secret

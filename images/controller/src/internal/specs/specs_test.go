@@ -423,9 +423,6 @@ func getRequiredWorkerAnnotations(usePoolProxy, useSecureCommunication bool) map
 		testKeys.WorkersPerPoolProxy:    fmt.Sprintf("%d", workersPerPoolProxy),
 		testKeys.WorkerPrefix:           workerPrefix,
 	}
-	if usePoolProxy {
-
-	}
 	return annotations
 }
 

@@ -115,22 +115,17 @@ data:
         # Note we do not use a startup probe for workers because if we do, the headless service will
         # not create a DNS entry for the pod until it succeeds; this delays the worker from
         # registering with the job manager.
-        {{- $healthcheckExe := printf "%s/glnxa64/mjshealthcheck" (include "paths.binDir" .) }}
         {{- $probeTimeout := .Values.livenessProbeTimeout | default 30 }}
         {{- $livenessProbePeriod := .Values.livenessProbePeriod | default 300 }}
         {{- $livenessProbeInitialDelay := .Values.livenessProbeInitialDelay | default 300 }}
+        {{- $matlabRootFile := include "paths.matlabRootFile" . }}
         livenessProbe:
           exec:
             command:
-            - {{ $healthcheckExe  | quote }}
-            - "-worker"
-            - "-matlabroot"
-            - {{ include "paths.matlabroot" . | quote }}
-            - "-baseport"
-            - {{ .Values.basePort | quote }}
-            - "-timeout"
-            - {{ $probeTimeout | quote }}
-          initialDelaySeconds: {{ $livenessProbeInitialDelay }} 
+            - "/bin/bash"
+            - "-c"
+            - {{ printf "MATLAB_ROOT=$(cat %s 2>/dev/null || echo %s) && \"${MATLAB_ROOT}/toolbox/parallel/bin/glnxa64/mjshealthcheck\" -worker -matlabroot \"${MATLAB_ROOT}\" -baseport %s -timeout %s" $matlabRootFile (include "paths.matlabroot" .) (.Values.basePort | toString) ($probeTimeout | toString) | quote }}
+          initialDelaySeconds: {{ $livenessProbeInitialDelay }}
           periodSeconds: {{ $livenessProbePeriod }}
           timeoutSeconds: {{ $probeTimeout }}
           failureThreshold: {{ .Values.livenessProbeFailureThreshold | default 3 }}

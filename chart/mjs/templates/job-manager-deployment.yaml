@@ -1,5 +1,9 @@
 # Deployment for the MJS job manager.
 # Copyright 2025 The MathWorks, Inc.
+{{- include "checks.validateAdditionalReleases" . }}
+{{- include "checks.validatePVCs" . }}
+{{- include "checks.validateAdminPassword" . }}
+{{- include "checks.validateLDAPSecret" . }}
 {{- $name := include "resources.jobManager" . }}
 {{- $jobManagerImageTag := .Values.jobManagerImageTag | default .Values.matlabRelease }}
 {{- $jobManagerImage := .Values.jobManagerImage }}
@@ -91,38 +95,27 @@ spec:
             {{- end }}
 
         # Run healthcheck in startup and liveness probes
-        {{- $healthcheckExe := printf "%s/glnxa64/mjshealthcheck" (include "paths.binDir" .) }}
         {{- $probeTimeout := .Values.livenessProbeTimeout | default 30 }}
         {{- $livenessProbePeriod := .Values.livenessProbePeriod | default 300 }}
+        {{- $matlabRootFile := include "paths.matlabRootFile" . }}
+        {{- $healthcheckCmd := printf "MATLAB_ROOT=$(cat %s 2>/dev/null || echo %s) && \"${MATLAB_ROOT}/toolbox/parallel/bin/glnxa64/mjshealthcheck\" -jobmanager \"%s\" -matlabroot \"${MATLAB_ROOT}\" -baseport %s -timeout %s" $matlabRootFile (include "paths.matlabroot" .) .Values.jobManagerName (.Values.basePort | toString) ($probeTimeout | toString) }}
         startupProbe:
           exec:
             command:
-            - {{ $healthcheckExe | quote }}
-            - "-jobmanager"
-            - {{ .Values.jobManagerName | quote }}
-            - "-matlabroot"
-            - {{ include "paths.matlabroot" . | quote }}
-            - "-baseport"
-            - {{ .Values.basePort | quote }}
-            - "-timeout"
-            - {{ $probeTimeout | quote }}
-          initialDelaySeconds: {{ .Values.startupProbeInitialDelay | default 5 }} 
+            - "/bin/bash"
+            - "-c"
+            - {{ $healthcheckCmd | quote }}
+          initialDelaySeconds: {{ .Values.startupProbeInitialDelay | default 5 }}
           periodSeconds: {{ .Values.startupProbePeriod | default 1 }}
           timeoutSeconds: {{ $probeTimeout }}
           failureThreshold: {{ .Values.startupProbeFailureThreshold | default 60 }}
         livenessProbe:
           exec:
             command:
-            - {{ $healthcheckExe  | quote }}
-            - "-jobmanager"
-            - {{ .Values.jobManagerName | quote }}
-            - "-matlabroot"
-            - {{ include "paths.matlabroot" . | quote }}
-            - "-baseport"
-            - {{ .Values.basePort | quote }}
-            - "-timeout"
-            - {{ $probeTimeout | quote }}
-          initialDelaySeconds: {{ $livenessProbePeriod }} 
+            - "/bin/bash"
+            - "-c"
+            - {{ $healthcheckCmd | quote }}
+          initialDelaySeconds: {{ $livenessProbePeriod }}
           periodSeconds: {{ $livenessProbePeriod }}
           timeoutSeconds: {{ $probeTimeout }}
           failureThreshold: {{ .Values.livenessProbeFailureThreshold | default 3 }}

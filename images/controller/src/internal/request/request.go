@@ -29,6 +29,7 @@ type ExecConfig struct {
 	JobManagerContainer       string
 	JobManagerLabel           string
 	JobManagerName            string
+	MatlabRootFile            string
 	RequireScriptVerification bool
 	ResizePath                string
 	SecretPath                string
@@ -117,11 +118,14 @@ type workersPerOS struct {
 	Windows int
 }
 
-// Helper to construct resize status command
+// Helper to construct resize status command.
+// The command reads the MATLAB root directory from a file on the job manager pod,
+// following the same pattern as the job manager health check probe.
 func GetResizeStatusCommand(conf ExecConfig) []string {
-	cmd := []string{"timeout", fmt.Sprintf("%d", conf.TimeoutSecs), conf.ResizePath, "status", "-baseport", fmt.Sprintf("%d", conf.BasePort)}
+	resizeCmd := fmt.Sprintf("MATLAB_ROOT=$(cat %s) && timeout %d \"${MATLAB_ROOT}/%s\" status -baseport %d",
+		conf.MatlabRootFile, conf.TimeoutSecs, conf.ResizePath, conf.BasePort)
 	if conf.RequireScriptVerification {
-		cmd = append(cmd, "-secretfile", conf.SecretPath)
+		resizeCmd += fmt.Sprintf(" -secretfile %s", conf.SecretPath)
 	}
-	return cmd
+	return []string{"sh", "-c", resizeCmd}
 }

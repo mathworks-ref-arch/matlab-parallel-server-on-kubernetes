@@ -113,6 +113,11 @@ cert.pem
 /cert
 {{- end -}}
 
+# File where the worker startup script writes the detected MATLAB root directory
+{{- define "paths.matlabRootFile" -}}
+/tmp/matlab_root
+{{- end -}}
+
 # Path for mounting additional MATLAB PVCs
 {{- define "paths.additionalMatlabDir" -}}
 /opt/additionalmatlab

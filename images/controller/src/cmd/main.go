@@ -139,9 +139,7 @@ func setUpCluster(conf *config.Config, client k8s.Client, logger *logging.Logger
 	}, conf.Network, conf.ResourceNames, client, certificate.New(), profCreator, jsonmarshal.New(), logger)
 
 	setupSteps := []func() error{
-		s.CheckAdminPassword,
 		s.CheckLoadBalancer,
-		s.CheckLDAPSecret,
 		s.CreateOrLoadSharedSecret,
 		s.CreateCertsForMetricsIfNeeded,
 		s.CreateParallelServerProxySecretIfNeeded,
@@ -162,6 +160,7 @@ func createController(conf *config.Config, client k8s.Client, logger *logging.Lo
 		JobManagerContainer:       conf.ResourceNames.JobManagerContainer,
 		JobManagerLabel:           conf.ResourceNames.JobManagerLabel,
 		JobManagerName:            conf.JobManagerName,
+		MatlabRootFile:            conf.MatlabRootFile,
 		RequireScriptVerification: conf.Network.RequireScriptVerification,
 		ResizePath:                conf.ResizePath,
 		SecretPath:                filepath.Join(conf.ResourceNames.SharedSecretDir, conf.ResourceNames.SharedSecretFile),

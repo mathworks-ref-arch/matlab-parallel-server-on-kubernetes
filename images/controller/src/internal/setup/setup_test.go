@@ -84,8 +84,6 @@ func expectCreateSecretError(client *mockK8s.MockClient, name string) error {
 
 // Create some fake resource names for use in tests
 var testResources = config.ResourceNames{
-	AdminPasswordSecret:       "test-admin-password",
-	AdminPasswordKey:          "test-admin-key",
 	CertificateFile:           "test-cert.json",
 	ClientMetricsSecret:       "test-client-metrics-secret",
 	ClientMetricsCertFile:     "test-client.crt",
@@ -94,8 +92,6 @@ var testResources = config.ResourceNames{
 	JobManagerContainer:       "test-jm-container",
 	JobManagerLabel:           "app=test-jm-label",
 	JobManagerService:         "test-jm-service",
-	LdapSecret:                "test-ldap-secret",
-	LdapCertFile:              "test-ldap.crt",
 	LoadBalancer:              "test-lb",
 	MetricsSecret:             "test-metrics-secret",
 	MetricsCaCertFile:         "test-metrics-ca.crt",

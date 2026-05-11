@@ -337,6 +337,9 @@
     "matlabPVC": {
       "type": "string"
     },
+    "matlabRoot": {
+      "type": "string"
+    },
     "matlabRelease": {
       "type": "string",
       "minLength": 6,

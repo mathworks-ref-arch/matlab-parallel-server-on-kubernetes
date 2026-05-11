@@ -628,7 +628,7 @@ func createProxySpecWithAnnotations(p int, checksum string, usesCert bool) (*app
 		},
 	}
 	if usesCert {
-		spec.ObjectMeta.Annotations[testConfig.AnnotationKeys.SecretName] = name
+		spec.Annotations[testConfig.AnnotationKeys.SecretName] = name
 	}
 	return &spec, name
 }

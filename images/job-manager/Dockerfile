@@ -1,4 +1,4 @@
-# Copyright 2024-2025 The MathWorks, Inc.
+# Copyright 2024-2026 The MathWorks, Inc.
 # This Dockerfile allows you to build a Docker® image for the MATLAB® Job Scheduler job manager.
 # The MATLAB Package Manager installs MATLAB and MATLAB Parallel Server on the image.
 # Use the optional build argument to customize the version of MATLAB the MATLAB Package Manager installs.
@@ -29,21 +29,24 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     && rm -rf /var/lib/apt/lists/*
 
 # Run mpm to install MATLAB.
-RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
+# Install to /opt/matlab/<ReleaseNumber> to match the mathworks/matlab Docker image layout.
+RUN MATLAB_INSTALL_DIR="/opt/matlab/$(echo ${MATLAB_RELEASE} | sed 's/^r/R/')" \
+    && wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
     && sudo ./mpm install \
     --release=${MATLAB_RELEASE} \
-    --destination=/opt/matlab \
+    --destination=${MATLAB_INSTALL_DIR} \
     --products MATLAB \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log
 
 # Run mpm to install MATLAB Parallel Server.
-RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
+RUN MATLAB_INSTALL_DIR="/opt/matlab/$(echo ${MATLAB_RELEASE} | sed 's/^r/R/')" \
+    && wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
     && sudo ./mpm install \
     --release=${MATLAB_RELEASE} \
-    --destination=/opt/matlab \
+    --destination=${MATLAB_INSTALL_DIR} \
     --products MATLAB_Parallel_Server \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log

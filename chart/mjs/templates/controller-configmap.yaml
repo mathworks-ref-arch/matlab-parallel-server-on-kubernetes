@@ -15,10 +15,11 @@ data:
       "JobManagerWaitPeriod": {{ .Values.startupProbePeriod | default 1 }},
       "KubeConfig": "",
       "KubernetesTimeoutSecs": 60,
+      "MatlabRootFile": {{ include "paths.matlabRootFile" . | quote }},
       "MinWorkers": {{ .Values.minWorkers }},
       "Period": {{ .Values.autoScalingPeriod }},
       "PreserveSecrets": {{ .Values.preserveSecrets | default false }},
-      "ResizePath": {{ printf "%s/resize" (include "paths.binDir" .) | quote }},
+      "ResizePath": "toolbox/parallel/bin/resize",
       "Network": {
         "BasePort": {{ .Values.basePort }},
         "ClusterDomain": {{ include "derived.clusterDomain" . | quote }},
@@ -33,7 +34,6 @@ data:
         "ParallelServerProxyUseMutualTLS": {{ .Values.parallelServerProxyUseMutualTLS }},
         "PoolProxyBasePort": {{ .Values.poolProxyBasePort }},
         "RequireClientCertificate": {{ .Values.requireClientCertificate }},
-        "RequireLdapCert": {{ include "derived.addLDAPCert" . }},
         "RequireScriptVerification": {{ .Values.requireScriptVerification }},
         "SecurityLevel": {{ .Values.securityLevel }},
         "WorkersPerPoolProxy": {{ .Values.workersPerPoolProxy }},
@@ -43,8 +43,6 @@ data:
         "UseSecureMetrics": {{ and .Values.exportMetrics .Values.useSecureMetrics }}
       },
       "ResourceNames": {
-        "AdminPasswordSecret": {{ include "resources.adminPasswordSecret" . | quote }},
-        "AdminPasswordKey": {{ include "resources.adminPasswordKey" . | quote }},
         "CertificateFile": {{ include "paths.certFile" . | quote }},
         "ClientMetricsSecret": {{ include "resources.clientMetricsSecret" . | quote }},
         "ClientMetricsCertFile": {{ include "paths.clientMetricsCert" . | quote }},
@@ -53,8 +51,6 @@ data:
         "JobManagerContainer": {{ include "resources.jobManager" . | quote }},
         "JobManagerLabel": {{ printf "app=%s" (include "resources.jobManager" .) | quote }},
         "JobManagerService": {{ include "resources.jobManager" . | quote }},
-        "LdapSecret": {{ include "resources.ldapSecret" . | quote }},
-        "LdapCertFile": {{ include "paths.ldapCert" . | quote }},
         "LoadBalancer": {{ include "resources.ingressProxy" . | quote }},
         "MetricsSecret": {{ include "resources.metricsSecret" . | quote }},
         "MetricsCaCertFile": {{ include "paths.metricsCaCert" . | quote }},

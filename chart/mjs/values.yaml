@@ -50,6 +50,7 @@ additionalSupportedReleases: [] # Older MATLAB releases this cluster supports, s
 additionalMatlabPVCs: [] # Names of PersistentVolumeClaims containing installations of older MATLAB Parallel Server releases, specified as an array
 
 # MJS settings
+matlabRoot: "" # Root folder of the MATLAB installation in worker containers. If unset, worker pods look for a MATLAB installation at /opt/matlab or /opt/matlab/<release-number>, where <release-number> is the MATLAB release number prefixed with "R", for example R2025b.
 minWorkers: 0 # Minimum number of workers to resize the cluster to
 logLevel: 0 # Logging verbosity level
 basePort: 27350 # The base port of the MJS service

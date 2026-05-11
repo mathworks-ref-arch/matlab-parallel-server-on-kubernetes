@@ -69,7 +69,7 @@
 ## Set the desired value for destinationFolder and
 ## uncomment the following line.
 
-destinationFolder=/opt/matlab
+destinationFolder=/opt/matlab/R2025a
 
 
 ########################################################################

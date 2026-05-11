@@ -57,6 +57,7 @@ If you do not include a parameter in your YAML file, your configuration uses the
 `matlabImageTag`                      | Tag of the image to use for the worker image. If you do not set this value, the Helm chart uses the `matlabRelease` parameter as the tag. | &mdash;
 `matlabPVC`                           | Name of the PersistentVolumeClaim that is bound to the PersistentVolume with a MATLAB Parallel Server installation. Set this option only if you did not build a Docker image containing a MATLAB Parallel Server installation. | &mdash;
 `matlabRelease`                       | Release number of the MATLAB version to use, specified with a lowercase `r`. For example, to use MATLAB release R2024a, set this parameter to `r2024a`. | &mdash;
+`matlabRoot`                          | Root folder of the MATLAB installation in worker containers. If this parameter is not set, worker pods look for a MATLAB installation at `/opt/matlab` or `/opt/matlab/<release-number>`, where `<release-number>` is the MATLAB release number prefixed with "R", for example `R2025b`. | &mdash;
 `maxWorkers`                          | Maximum number of workers that the cluster can automatically resize to. | &mdash;
 `metricsPort`                         | Port for exporting cluster monitoring metrics. The job manager uses an HTTP(S) server at the port you specify to export metrics. | `8001`
 `minWorkers`                          | Minimum number of workers to run in the cluster. | `0`
@@ -100,4 +101,4 @@ If you do not include a parameter in your YAML file, your configuration uses the
 
 ---
 
-Copyright 2024-2025 The MathWorks, Inc.
+Copyright 2024-2026 The MathWorks, Inc.

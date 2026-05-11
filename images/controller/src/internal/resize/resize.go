@@ -420,7 +420,6 @@ type versionedProxy struct {
 	templateChecksum string
 	usesSecret       bool
 	secretName       string
-	certFile         string
 }
 
 // getProxiesFromDeployments converts a list of proxy deployments to a list of proxy details
@@ -534,10 +533,14 @@ func (r *K8sResizer) updateProxy(oldProxy *versionedProxy) error {
 	if newProxy.usesSecret {
 		// If the updated proxy needs a certificate, make sure it exists
 		// (e.g. in case helm upgrade was used to change useSecureCommunication to true
-		r.ensureProxySecretExists(newProxy.secretName)
+		if err := r.ensureProxySecretExists(newProxy.secretName); err != nil {
+			return err
+		}
 	} else if oldProxy.usesSecret {
 		// If the previous spec used a secret but the new one does not, delete the secret
-		r.ensureNoProxySecret(oldProxy.secretName)
+		if err := r.ensureNoProxySecret(oldProxy.secretName); err != nil {
+			return err
+		}
 	}
 	return nil
 }
