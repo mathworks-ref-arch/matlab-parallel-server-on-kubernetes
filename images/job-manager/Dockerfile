@@ -29,24 +29,21 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     && rm -rf /var/lib/apt/lists/*
 
 # Run mpm to install MATLAB.
-# Install to /opt/matlab/<ReleaseNumber> to match the mathworks/matlab Docker image layout.
-RUN MATLAB_INSTALL_DIR="/opt/matlab/$(echo ${MATLAB_RELEASE} | sed 's/^r/R/')" \
-    && wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
+RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
     && sudo ./mpm install \
     --release=${MATLAB_RELEASE} \
-    --destination=${MATLAB_INSTALL_DIR} \
+    --destination=/opt/matlab \
     --products MATLAB \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log
 
 # Run mpm to install MATLAB Parallel Server.
-RUN MATLAB_INSTALL_DIR="/opt/matlab/$(echo ${MATLAB_RELEASE} | sed 's/^r/R/')" \
-    && wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
+RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
     && sudo ./mpm install \
     --release=${MATLAB_RELEASE} \
-    --destination=${MATLAB_INSTALL_DIR} \
+    --destination=/opt/matlab \
     --products MATLAB_Parallel_Server \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log

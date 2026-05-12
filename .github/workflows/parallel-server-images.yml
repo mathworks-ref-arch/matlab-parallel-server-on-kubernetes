@@ -53,10 +53,9 @@ jobs:
           tags: ${{ env.JM_IMAGE }}:${{ matrix.matlab-release }}
 
       - name: Test MJS on container
-        run: |
-          MATLAB_ROOT="/opt/matlab/$(echo ${{ matrix.matlab-release }} | sed 's/^r/R/')"
-          BIN_DIR="${MATLAB_ROOT}/toolbox/parallel/bin"
-          docker run ${JM_IMAGE}:${{ matrix.matlab-release }} bash -c "${BIN_DIR}/mjs start && ${BIN_DIR}/startjobmanager && ${BIN_DIR}/glnxa64/mjshealthcheck -matlabroot ${MATLAB_ROOT}"
+        env:
+          BIN_DIR: /opt/matlab/toolbox/parallel/bin
+        run: docker run ${JM_IMAGE}:${{ matrix.matlab-release }} bash -c "${BIN_DIR}/mjs start && ${BIN_DIR}/startjobmanager && ${BIN_DIR}/glnxa64/mjshealthcheck -matlabroot /opt/matlab"
 
       - name: Push to GHCR
         uses: docker/build-push-action@v5
@@ -108,9 +107,7 @@ jobs:
       - name: Test MATLAB on container
         env:
           MLM_LICENSE_FILE: /tmp/license.lic # License file path on container
-        run: |
-          MATLAB_ROOT="/opt/matlab/$(echo ${{ matrix.matlab-release }} | sed 's/^r/R/')"
-          docker run -v ${LICENSE_FILE_PATH}:${MLM_LICENSE_FILE} ${WORKER_IMAGE}:${{ matrix.matlab-release }} bash -c "MLM_LICENSE_FILE=${MLM_LICENSE_FILE} ${MATLAB_ROOT}/bin/matlab -batch 'version'"
+        run: docker run -v ${LICENSE_FILE_PATH}:${MLM_LICENSE_FILE} ${WORKER_IMAGE}:${{ matrix.matlab-release }} bash -c "MLM_LICENSE_FILE=${MLM_LICENSE_FILE} /opt/matlab/bin/matlab -batch 'version'"
 
       - name: Push to GHCR
         uses: docker/build-push-action@v5

@@ -35,14 +35,12 @@ ENV INPUT_DIR=/tmp/${MATLAB_RELEASE}
 COPY mpm-input-files/${MATLAB_RELEASE} ${INPUT_DIR}
 
 # Run mpm to install Simulink.
-# Install to /opt/matlab/<ReleaseNumber> to match the mathworks/matlab Docker image layout.
-RUN MATLAB_INSTALL_DIR="/opt/matlab/$(echo ${MATLAB_RELEASE} | sed 's/^r/R/')" \
-    && if [ ${INCLUDE_SIMULINK} = true ]; then \
+RUN if [ ${INCLUDE_SIMULINK} = true ]; then \
     wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
     && sudo ./mpm install \
     --release=${MATLAB_RELEASE} \
-    --destination=${MATLAB_INSTALL_DIR} \
+    --destination=/opt/matlab \
     --products Simulink \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log; \
