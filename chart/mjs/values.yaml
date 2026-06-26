@@ -29,7 +29,7 @@ controllerImagePullPolicy: "IfNotPresent"
 
 # Image containing the parallel server proxy.
 # Only used if the cluster supports MATLAB release R2026a or later.
-parallelServerProxyImage: "ghcr.io/mathworks/parallel-server-proxy:v1.0.0"
+parallelServerProxyImage: "ghcr.io/mathworks/parallel-server-proxy:v1.0.1"
 parallelServerProxyImagePullPolicy: "IfNotPresent"
 parallelServerProxyPort: 1080
 parallelServerProxyUseMutualTLS: true
