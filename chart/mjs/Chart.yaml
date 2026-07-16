@@ -1,7 +1,7 @@
-# Copyright 2024 The MathWorks, Inc.
+# Copyright 2024-2026 The MathWorks, Inc.
 apiVersion: v2
 name: mjs
 description: A Helm chart for MATLAB (R) Job Scheduler in Kubernetes
 type: application
-version: 2.1.1
-appVersion: 2.1.1
+version: 2.1.2
+appVersion: 2.1.2
