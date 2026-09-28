@@ -68,7 +68,7 @@ RUN if [ ${INCLUDE_SIMULINK} = true ]; then \
     fi
 
 # Run mpm to install RoadRunner.
-RUN if [ ${INCLUDE_ROADRUNNER} = true ]; then \
+RUN if [ ${INCLUDE_ROADRUNNER} = true ] && [ "${MATLAB_RELEASE}" \> "r2026a" ]; then \
     wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
     && sudo ./mpm install \
