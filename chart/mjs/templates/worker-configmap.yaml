@@ -57,6 +57,11 @@ data:
 
     # Set ulimit to a reasonable value
     ulimit -n {{ .Values.fileDescriptorUlimit | default 4096 }}
+    {{- with .Values.workerPreStartCommand }}
+
+    # Run user-specified pre-start command(s)
+{{ . | indent 4 }}
+    {{- end }}
 
     # Start the MJS service
     ${BIN_DIR}/mjs start -mjsdef {{ $localMJSDef }} -loglevel {{ .Values.logLevel }} -disablereliableconnections 2>&1 | tee -a ${SCRIPTLOGFILE}

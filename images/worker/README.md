@@ -40,13 +40,14 @@ Uncomment any support packages you want to install by removing the `#` symbol fr
 
 Build the Docker image.
 - Specify `<release>` as a MATLAB release number with a lowercase `r`. For example, to install MATLAB R2025a, specify `<release>` as `r2025a`.
-- Specify `<include-simulink>` as `true` to install Simulink and the Simulink toolboxes, or `false` to only install MATLAB toolboxes and support packages.
+- Specify `<include-simulink>` as `false` if you do not want to install Simulink and the Simulink toolboxes.
+- Specify `<include-roadrunner>` as `false` if you do not want to install RoadRunner (R2026b and later).
 - Specify `<my-tag>` as the Docker tag to use for the image.
 
 ```
-docker build --build-arg MATLAB_RELEASE=<release> --build-arg INCLUDE_SIMULINK=<include-simulink> -t <my-tag> .
+docker build --build-arg MATLAB_RELEASE=<release> --build-arg INCLUDE_SIMULINK=<include-simulink> INCLUDE_ROADRUNNER=<false> -t <my-tag> .
 ```
 
 ---
 
-Copyright 2024-2025 The MathWorks, Inc.
+Copyright 2024-2026 The MathWorks, Inc.

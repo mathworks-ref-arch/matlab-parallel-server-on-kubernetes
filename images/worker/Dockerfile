@@ -4,16 +4,17 @@
 # Use the optional build argument to customize the version of MATLAB the MATLAB Package Manager installs.
 
 # Here is an example docker build command with the optional build arguments.
-# docker build --build-arg MATLAB_RELEASE=r2026a -t matlab-parallel-server .
+# docker build --build-arg MATLAB_RELEASE=r2026b -t matlab-parallel-server .
 
 # To specify which MATLAB release to install in the container, edit the value of the MATLAB_RELEASE argument.
-# Use lowercase to specify the release, for example: ARG MATLAB_RELEASE=r2026a
-ARG MATLAB_RELEASE=r2026a
+# Use lowercase to specify the release, for example: ARG MATLAB_RELEASE=r2026b
+ARG MATLAB_RELEASE=r2026b
 FROM ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-job-manager-image:${MATLAB_RELEASE}
 
 # Declare build arguments to use at the current build stage.
 ARG MATLAB_RELEASE
 ARG INCLUDE_SIMULINK=true
+ARG INCLUDE_ROADRUNNER=true
 
 # Install mpm dependencies.
 RUN export DEBIAN_FRONTEND=noninteractive \
@@ -64,6 +65,18 @@ RUN if [ ${INCLUDE_SIMULINK} = true ]; then \
     --inputfile ${SIMULINK_TOOLBOX_FILE} \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
     && sudo rm -rf mpm /tmp/mathworks_root.log ${SIMULINK_TOOLBOX_FILE}; \
+    fi
+
+# Run mpm to install RoadRunner.
+RUN if [ ${INCLUDE_ROADRUNNER} = true ]; then \
+    wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
+    && chmod +x mpm \
+    && sudo ./mpm install \
+    --release=${MATLAB_RELEASE} \
+    --destination=/opt/matlab \
+    --products RoadRunner \
+    || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
+    && sudo rm -rf mpm /tmp/mathworks_root.log; \
     fi
 
 # Run mpm to install support packages into the matlab user's HOME folder.

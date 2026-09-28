@@ -15,11 +15,18 @@
           "r2024a",
           "r2024b",
           "r2025a",
-          "r2025b"
+          "r2025b",
+          "r2026a"
         ]
       }
     },
     "additionalWorkerPVCs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "additionalWorkerSecrets": {
       "type": "object",
       "additionalProperties": {
         "type": "string"
@@ -123,6 +130,32 @@
     },
     "fileDescriptorUlimit": {
       "type": "number"
+    },
+    "filesToMount": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "configMapName": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "mountPath": {
+            "type": "string"
+          },
+          "workerOnly": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configMapName",
+          "fileName",
+          "mountPath"
+        ],
+        "additionalProperties": false
+      }
     },
     "global": {
       "type": "object"
@@ -349,7 +382,8 @@
         "r2024b",
         "r2025a",
         "r2025b",
-        "r2026a"
+        "r2026a",
+        "r2026b"
       ]
     },
     "maxWorkers": {
@@ -589,6 +623,9 @@
       }
     },
     "workerPassword": {
+      "type": "string"
+    },
+    "workerPreStartCommand": {
       "type": "string"
     },
     "workersPerPoolProxy": {

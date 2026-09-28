@@ -169,6 +169,13 @@ spec:
         - name: {{ $javaVolName }}
           mountPath: {{ include "paths.javaDir" . }}
         {{- end }}
+        {{- range $idx, $file := .Values.filesToMount | default list }}
+        {{- if not $file.workerOnly }}
+        - name: {{ printf "%s-%d" $file.configMapName $idx }}
+          mountPath: {{ $file.mountPath }}
+          subPath: {{ $file.fileName }}
+        {{- end }}
+        {{- end }}
 
       volumes:
       - name: {{ $configVolName }}
@@ -208,4 +215,14 @@ spec:
       - name: {{ $javaVolName }}
         persistentVolumeClaim:
           claimName: {{ .Values.javaPVC }}
+      {{- end }}
+      {{- range $idx, $file := .Values.filesToMount | default list }}
+      {{- if not $file.workerOnly }}
+      - name: {{ printf "%s-%d" $file.configMapName $idx }}
+        configMap:
+          name: {{ $file.configMapName }}
+          items:
+          - key: {{ $file.fileName }}
+            path: {{ $file.fileName }}
+      {{- end }}
       {{- end }}
