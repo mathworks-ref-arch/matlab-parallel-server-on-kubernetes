@@ -2,7 +2,7 @@
 # Copyright 2024-2026 The MathWorks, Inc.
 
 # Specify the release number of the MATLAB version to use with a lowercase "r" in your custom values.yaml file.
-# matlabRelease: "r2026a"
+# matlabRelease: "r2026b"
 
 # Specify the maximum number of workers that the cluster can automatically resize to in your custom values.yaml file.
 # maxWorkers: 32

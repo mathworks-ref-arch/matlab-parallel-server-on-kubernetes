@@ -4,15 +4,15 @@
 # Use the optional build argument to customize the version of MATLAB the MATLAB Package Manager installs.
 
 # Here is an example docker build command with the optional build argument.
-# docker build --build-arg MATLAB_RELEASE=r2026a -t mjs-job-manager .
+# docker build --build-arg MATLAB_RELEASE=r2026b -t mjs-job-manager .
 
 # To specify which MATLAB release to install in the container, edit the value of the MATLAB_RELEASE argument.
-# Use lowercase to specify the release, for example: ARG MATLAB_RELEASE=r2026a
-ARG MATLAB_RELEASE=r2026a
+# Use lowercase to specify the release, for example: ARG MATLAB_RELEASE=r2026b
+ARG MATLAB_RELEASE=r2026b
 
-# When you start the build stage, by default this Dockerfile uses the Ubuntu-based matlab-deps image.
-# To check the available matlab-deps images, see: https://hub.docker.com/r/mathworks/matlab-deps
-FROM mathworks/matlab-deps:${MATLAB_RELEASE}
+# Build the job manager image on top of the mjs-deps base image, which wraps
+# matlab-deps and adds the JRE that MJS requires.
+FROM ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs-deps-image:${MATLAB_RELEASE}
 
 # Declare build arguments to use at the current build stage.
 ARG MATLAB_RELEASE

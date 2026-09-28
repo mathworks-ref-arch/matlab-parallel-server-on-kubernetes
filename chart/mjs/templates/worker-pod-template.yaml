@@ -177,6 +177,16 @@ data:
         - name: {{ $pvc }}
           mountPath: {{ $path }}
         {{- end }}
+        {{- range $secret, $path := .Values.additionalWorkerSecrets }}
+        - name: {{ $secret }}
+          mountPath: {{ $path }}
+          readOnly: true
+        {{- end }}
+        {{- range $idx, $file := .Values.filesToMount | default list }}
+        - name: {{ printf "%s-%d" $file.configMapName $idx }}
+          mountPath: {{ $file.mountPath }}
+          subPath: {{ $file.fileName }}
+        {{- end }}
 
       volumes:
       - name: {{ $configVolName }}
@@ -212,4 +222,17 @@ data:
       - name: {{ $pvc }}
         persistentVolumeClaim:
           claimName: {{ $pvc }}
+      {{- end }}
+      {{- range $secret, $path := .Values.additionalWorkerSecrets }}
+      - name: {{ $secret }}
+        secret:
+          secretName: {{ $secret }}
+      {{- end }}
+      {{- range $idx, $file := .Values.filesToMount | default list }}
+      - name: {{ printf "%s-%d" $file.configMapName $idx }}
+        configMap:
+          name: {{ $file.configMapName }}
+          items:
+          - key: {{ $file.fileName }}
+            path: {{ $file.fileName }}
       {{- end }}

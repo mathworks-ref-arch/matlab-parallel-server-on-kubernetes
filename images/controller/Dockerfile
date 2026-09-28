@@ -1,7 +1,9 @@
 # Copyright 2024-2026 The MathWorks, Inc.
 
 # Stage 1: Build the controller executable
-FROM golang:1.26 AS builder
+ARG BASE_IMAGE=golang
+FROM ${BASE_IMAGE}:1.26 AS builder
+
 WORKDIR /app
 COPY src/ /app
 RUN go version

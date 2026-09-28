@@ -44,6 +44,12 @@
       {{- fail (printf "Unable to find PersistentVolumeClaim %q in namespace %q. Ensure the PVC exists before installing the Helm chart." . $ns) -}}
     {{- end -}}
   {{- end -}}
+  {{- range $secret, $path := .Values.additionalWorkerSecrets -}}
+    {{- $secretObj := lookup "v1" "Secret" $ns $secret -}}
+    {{- if not $secretObj -}}
+      {{- fail (printf "Unable to find Secret %q in namespace %q. Ensure the Secret exists before installing the Helm chart, for example: kubectl create secret generic %s --from-file=<dir> --namespace %s" $secret $ns $secret $ns) -}}
+    {{- end -}}
+  {{- end -}}
 {{- end -}}
 {{- end -}}
 
