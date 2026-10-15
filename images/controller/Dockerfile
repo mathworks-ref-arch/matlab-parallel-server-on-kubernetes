@@ -2,7 +2,7 @@
 
 # Stage 1: Build the controller executable
 ARG BASE_IMAGE=golang
-FROM ${BASE_IMAGE}:1.26 AS builder
+FROM ${BASE_IMAGE}:1.27 AS builder
 
 WORKDIR /app
 COPY src/ /app
