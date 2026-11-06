@@ -274,7 +274,7 @@ By default, each worker pod requests 2 vCPU and 8GB of memory. If your cluster d
 - Modify your `values.yaml` file to decrease the value of the `maxWorkers` parameter.
 - Modify your `values.yaml` file to decrease the values of the `workerMemoryRequest` and `workerMemoryLimit` parameters. A minimum of 4GB per MATLAB worker is recommended. If you are using Simulink, a minimum of 8GB per worker is recommended.
 
-If you modified your `values.yaml` file, uninstall the MATLAB Job Scheduler Helm chart following the instructions in [Uninstall MATLAB Job Scheduler](#uninstall-matlab-job-scheduler), then reinstall the Helm chart following the instructions in [Install Helm chart](#install-helm-chart).
+If you modified your `values.yaml` file, upgrade the MATLAB Job Scheduler Helm chart following the instructions in [Upgrade Helm Chart](#upgrade-helm-chart).
 
 If your Kubernetes cluster nodes do not have enough ephemeral storage to pull the MATLAB Parallel Server Docker image, the output of `kubectl describe pods` might include messages like:
 ```
@@ -317,7 +317,11 @@ kubectl exec pod-name --namespace mjs -- /opt/matlab/toolbox/parallel/bin/util/q
 When the output shows `"runningJobs":[]`, there are no longer any running jobs and you can safely upgrade without interrupting jobs.
 
 To modify a configuration parameter in the Helm chart, either modify your `values.yaml` file to adjust the parameter or use the `--set` command-line flag.
-For example, to upgrade to the latest version of the Helm chart and set the `maxWorkers` parameter to 64, run this command.
+To upgrade to the latest version of the Helm chart and use your modified `values.yaml` file, run this command.
+```
+helm upgrade mjs oci://ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs --values values.yaml --namespace mjs
+```
+To upgrade to the latest version of the Helm chart and set the `maxWorkers` parameter to 64, run this command.
 ```
 helm upgrade mjs oci://ghcr.io/mathworks-ref-arch/matlab-parallel-server-k8s/mjs --reuse-values --set maxWorkers=64 --namespace mjs
 ```
